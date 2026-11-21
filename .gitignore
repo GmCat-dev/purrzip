@@ -1,0 +1,10 @@
+/target
+node_modules/
+app/src-tauri/gen/android/app/build/
+app/src-tauri/gen/android/.gradle/
+app/src-tauri/gen/android/app/src/main/jniLibs/
+app/src-tauri/gen/android/local.properties
+app/src-tauri/gen/android/keystore.properties
+*.jks
+*.keystore
+.DS_Store

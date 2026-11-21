@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Purrzip</title>
+<link rel="icon" href="img/smile.png" type="image/png">
+<link rel="stylesheet" href="app.css">
+<script src="theme.js"></script>
+</head>
+<body>
+<header class="top">
+  <button class="brand" id="go-home" type="button" aria-label="Purrzip home"><img src="img/smile.png" alt=""><span>Purr<b>zip</b></span><small>by GmCat</small></button>
+  <div class="top-right">
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch Day / Night">🌙</button>
+    <button class="icon-btn" id="about-btn" type="button" aria-label="About Purrzip">?</button>
+  </div>
+</header>
+
+<main id="app">
+  <!-- HOME -->
+  <section class="view" id="v-home">
+    <div class="hero">
+      <img class="cat float" src="img/hello.png" alt="GmCat waving">
+      <h1>Open and make archives</h1>
+      <p class="lead">.zip, .7z, .rar, .tar and more. Your files stay on this device.</p>
+    </div>
+    <div class="big-choices">
+      <button class="choice" id="home-open" type="button">
+        <img src="img/look.png" alt="">
+        <span><b>Open an archive</b><small>Look inside, unzip all or just some files</small></span>
+      </button>
+      <button class="choice" id="home-make" type="button">
+        <img src="img/pack.png" alt="">
+        <span><b>Make an archive</b><small>Squeeze files and folders into a .zip or .7z</small></span>
+      </button>
+    </div>
+    <p class="drop-hint desktop-only">…or drop files on this window.</p>
+    <p class="formats">Opens <span>ZIP</span><span>7z</span><span>RAR</span><span>TAR</span><span>GZ</span><span>BZ2</span><span>XZ</span><span>ZST</span><span>ISO</span><span>CAB</span></p>
+  </section>
+
+  <!-- OPEN: archive contents -->
+  <section class="view" id="v-open" hidden>
+    <div class="arch-card">
+      <img class="cat small" src="img/look.png" alt="">
+      <div class="arch-info">
+        <h2 id="o-name">archive.zip</h2>
+        <p class="muted"><span class="chip" id="o-format">ZIP</span> <span id="o-summary"></span></p>
+      </div>
+    </div>
+    <div class="toolbar">
+      <nav class="crumbs" id="o-crumbs" aria-label="Folder inside the archive"></nav>
+      <input id="o-search" type="search" placeholder="Find a file…" aria-label="Find a file">
+    </div>
+    <div class="list" id="o-list" role="list"></div>
+    <div class="dest-row">
+      <span class="muted">Unzip into</span> <b id="o-dest">…</b>
+      <button class="link-btn" id="o-dest-change" type="button">Change</button>
+    </div>
+    <div class="actions sticky">
+      <button class="btn ghost" id="o-back" type="button">Back</button>
+      <button class="btn" id="o-some" type="button" hidden>Unzip selected</button>
+      <button class="btn primary" id="o-all" type="button">Unzip all</button>
+    </div>
+  </section>
+
+  <!-- MAKE -->
+  <section class="view" id="v-make" hidden>
+    <div class="hero compact">
+      <img class="cat small float" src="img/pack.png" alt="">
+      <h1>Make an archive</h1>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>What goes in</h3><span class="muted" id="m-count"></span></div>
+      <div class="list small" id="m-items"><p class="empty" id="m-empty">Nothing yet. Add files or a folder.</p></div>
+      <div class="row-btns">
+        <button class="btn" id="m-add-files" type="button">+ Add files</button>
+        <button class="btn" id="m-add-folder" type="button">+ Add a folder</button>
+      </div>
+    </div>
+    <div class="panel">
+      <label class="field"><span>Name</span><input id="m-name" type="text" value="Archive" maxlength="120" autocomplete="off"></label>
+      <div class="field"><span>Kind</span>
+        <div class="seg" role="radiogroup" aria-label="Kind of archive" id="m-format">
+          <button type="button" role="radio" data-v="Zip" aria-checked="true"><b>.zip</b><small>Opens everywhere</small></button>
+          <button type="button" role="radio" data-v="SevenZ" aria-checked="false"><b>.7z</b><small>Smaller, needs 7-Zip or Purrzip</small></button>
+        </div>
+      </div>
+      <div class="field"><span>Squeeze</span>
+        <div class="seg three" role="radiogroup" aria-label="How hard to squeeze" id="m-level">
+          <button type="button" role="radio" data-v="Fast" aria-checked="false"><b>Fast</b></button>
+          <button type="button" role="radio" data-v="Normal" aria-checked="true"><b>Normal</b></button>
+          <button type="button" role="radio" data-v="Max" aria-checked="false"><b>Smallest</b></button>
+        </div>
+        <small class="hint">Photos, videos and other zips are already squeezed, so they're stored as they are.</small>
+      </div>
+      <label class="check"><input type="checkbox" id="m-pw-on"> <span>Lock it with a password</span></label>
+      <div id="m-pw-box" hidden>
+        <div class="pw-field"><input id="m-pw" type="password" placeholder="Password" autocomplete="new-password" aria-label="Password"><button class="link-btn" type="button" data-show="m-pw">Show</button></div>
+        <div class="pw-field"><input id="m-pw2" type="password" placeholder="Same password again" autocomplete="new-password" aria-label="Password again"></div>
+        <label class="check" id="m-hide-row" hidden><input type="checkbox" id="m-hide" checked> <span>Hide the file names too</span></label>
+        <small class="hint" id="m-pw-hint"></small>
+      </div>
+    </div>
+    <div class="dest-row">
+      <span class="muted">Save in</span> <b id="m-dest">…</b>
+      <button class="link-btn" id="m-dest-change" type="button">Change</button>
+    </div>
+    <div class="actions sticky">
+      <button class="btn ghost" id="m-back" type="button">Back</button>
+      <button class="btn primary" id="m-go" type="button" disabled>Make archive</button>
+    </div>
+  </section>
+
+  <!-- WORKING -->
+  <section class="view center" id="v-work" hidden>
+    <img class="cat bob" src="img/work.png" alt="GmCat working hard">
+    <h1 id="w-title">Unzipping…</h1>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="w-bar"><i></i></div>
+    <p class="big-num" id="w-pct">0%</p>
+    <p class="muted ellipsis" id="w-file">&nbsp;</p>
+    <p class="muted" id="w-bytes">&nbsp;</p>
+    <button class="btn" id="w-stop" type="button">Stop</button>
+  </section>
+
+  <!-- DONE -->
+  <section class="view center" id="v-done" hidden>
+    <img class="cat pop" id="d-cat" src="img/done.png" alt="GmCat thumbs up">
+    <h1 id="d-title">All done!</h1>
+    <p class="lead" id="d-text"></p>
+    <p class="path-box" id="d-path"></p>
+    <div class="notes" id="d-notes" hidden></div>
+    <div class="actions">
+      <button class="btn primary" id="d-show" type="button">Show it</button>
+      <button class="btn" id="d-again" type="button">Done</button>
+    </div>
+  </section>
+
+  <!-- ERROR -->
+  <section class="view center" id="v-error" hidden>
+    <img class="cat" src="img/oops.png" alt="GmCat looking sad">
+    <h1 id="e-title">Something went wrong</h1>
+    <p class="lead" id="e-text"></p>
+    <div class="actions"><button class="btn primary" id="e-back" type="button">Back</button></div>
+  </section>
+</main>
+
+<!-- In-page dialogs (never the browser's own boxes) -->
+<div class="overlay" id="dlg" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+    <img class="cat tiny" id="dlg-cat" src="img/secret.png" alt="">
+    <h2 id="dlg-title"></h2>
+    <p id="dlg-text"></p>
+    <div class="pw-field" id="dlg-pw-row" hidden><input id="dlg-pw" type="password" autocomplete="off" aria-label="Password"><button class="link-btn" type="button" data-show="dlg-pw">Show</button></div>
+    <p class="err" id="dlg-err" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" id="dlg-cancel" type="button">Cancel</button>
+      <button class="btn primary" id="dlg-ok" type="button">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- In-app file browser (phones, and the test build) -->
+<div class="overlay sheet" id="pick" hidden>
+  <div class="sheet-box" role="dialog" aria-modal="true" aria-labelledby="pick-title">
+    <div class="sheet-head">
+      <h2 id="pick-title">Pick</h2>
+      <button class="icon-btn" id="pick-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <div class="places" id="pick-places"></div>
+    <div class="toolbar"><button class="btn small" id="pick-up" type="button" aria-label="Up one folder">↑ Up</button><span class="ellipsis muted" id="pick-path"></span></div>
+    <div class="list" id="pick-list" role="list"></div>
+    <div class="actions">
+      <span class="muted" id="pick-count"></span>
+      <button class="btn primary" id="pick-ok" type="button">Use this folder</button>
+    </div>
+  </div>
+</div>
+
+<!-- Preview -->
+<div class="overlay sheet" id="pv" hidden>
+  <div class="sheet-box wide" role="dialog" aria-modal="true" aria-labelledby="pv-title">
+    <div class="sheet-head">
+      <img class="cat tiny" src="img/peek.png" alt="">
+      <h2 id="pv-title" class="ellipsis">Preview</h2>
+      <button class="icon-btn" id="pv-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <div class="pv-body" id="pv-body"></div>
+    <div class="actions">
+      <button class="btn ghost" id="pv-close2" type="button">Close</button>
+      <button class="btn primary" id="pv-extract" type="button">Unzip just this</button>
+    </div>
+  </div>
+</div>
+
+<!-- About -->
+<div class="overlay" id="about" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <img class="cat tiny" src="img/smile.png" alt="">
+    <h2 id="about-title">Purrzip <small id="about-ver"></small></h2>
+    <p>Open and make archives, by <b>GmCat</b>. Free, no ads, no account, no tracking. Your files never leave this device.</p>
+    <p class="muted small">Open source (AGPL-3.0). Opens RAR files with the free UnRAR library by Alexander Roshal; Purrzip can't make RAR files.</p>
+    <p class="small"><a href="https://github.com/GmCat-dev/purrzip" id="about-src" target="_blank" rel="noopener">Source code</a></p>
+    <div class="actions"><button class="btn primary" id="about-ok" type="button">Close</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="bridge.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

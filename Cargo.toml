@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["core", "service", "devserver", "app/src-tauri"]
+# The app needs system web-view libraries; build it with the Tauri tools (npx tauri build / android build).
+default-members = ["core", "service", "devserver"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

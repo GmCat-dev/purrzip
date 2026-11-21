@@ -1,0 +1,188 @@
+// Purrzip app-screen self-test: drives the real screen against the real engine (dev server)
+// at phone and desktop sizes, Day and Night. Fails on page errors or any browser pop-up box.
+// Usage: node ui_test.mjs <phone-root> <cli>   (dev server must run with PZ_ROOT=<phone-root>)
+import { createRequire } from "module";
+import { execFileSync } from "child_process";
+import fs from "fs";
+import path from "path";
+const require = createRequire(import.meta.url);
+const puppeteer = require("puppeteer");
+const BASE = process.env.BASE || "http://127.0.0.1:4231/";
+const ROOT = process.argv[2], CLI = process.argv[3];
+const DL = path.join(ROOT, "Download");
+let pass = 0; const fails = [];
+const ok = (name, cond, info) => { if (cond) { pass++; console.log("  ok  ", name); } else { fails.push(name); console.log("  FAIL", name, info ?? ""); } };
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+const b = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
+async function fresh(width, height, theme) {
+  const p = await b.newPage();
+  p.errs = [];
+  p.on("pageerror", e => p.errs.push(String(e)));
+  p.on("dialog", d => { p.errs.push("NATIVE DIALOG " + d.type()); d.dismiss(); });
+  await p.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
+  await p.setViewport({ width, height });
+  await p.goto(BASE);
+  await p.waitForSelector("#home-open");
+  return p;
+}
+const clickRow = (p, sel, text) => p.evaluate((sel, text) => {
+  const r = [...document.querySelectorAll(sel + " .row")].find(r => r.querySelector(".nm")?.textContent.trim().startsWith(text));
+  if (!r) return false; r.click(); return true;
+}, sel, text);
+const checkRow = (p, sel, text) => p.evaluate((sel, text) => {
+  const r = [...document.querySelectorAll(sel + " .row")].find(r => r.querySelector(".nm")?.textContent.trim().startsWith(text));
+  if (!r) return false; r.querySelector("input").click(); return true;
+}, sel, text);
+const visible = (p, id) => p.$eval(id, e => !e.hidden && !e.closest("[hidden]"));
+const text = (p, sel) => p.$eval(sel, e => e.textContent);
+async function waitView(p, view, ms = 15000) {
+  const t = Date.now();
+  while (Date.now() - t < ms) { if (await visible(p, "#v-" + view)) return true; await wait(100); }
+  return false;
+}
+async function openFromPicker(p, name) {
+  await p.click("#home-open"); await wait(400);
+  return clickRow(p, "#pick-list", name);
+}
+const cli = (...a) => { let out; try { out = execFileSync(CLI, a).toString(); } catch (e) { out = e.stdout.toString(); } return JSON.parse(out.trim().split("\n").pop()); };
+
+for (const [label, w, h, theme] of [["phone/day", 390, 844, "light"], ["desktop/night", 1200, 860, "dark"]]) {
+  console.log(`\n== ${label}`);
+  const p = await fresh(w, h, theme);
+  ok(`${label}: theme follows device`, (await p.$eval("html", e => e.dataset.theme)) === (theme === "dark" ? "dark" : "light"));
+
+  // 1. open + browse inside + search
+  ok(`${label}: picker lists archives`, await openFromPicker(p, "Cat photos.zip"));
+  ok(`${label}: archive opens`, await waitView(p, "open"));
+  ok(`${label}: summary shows 5 files`, (await text(p, "#o-summary")).startsWith("5 files"));
+  await clickRow(p, "#o-list", "Cat photos"); await wait(150);
+  await clickRow(p, "#o-list", "2026"); await wait(150);
+  ok(`${label}: folder navigation`, (await text(p, "#o-crumbs")).includes("2026"));
+  await p.type("#o-search", "notes"); await wait(150);
+  ok(`${label}: search finds notes.txt`, (await p.$$eval("#o-list .row", r => r.length)) === 1);
+  await clickRow(p, "#o-list", "Cat photos/notes.txt"); await wait(800);
+  ok(`${label}: text preview`, (await p.$eval("#pv-body", e => e.textContent)).includes("Shopping list"));
+  await p.keyboard.press("Escape"); await wait(100);
+  ok(`${label}: Esc closes preview`, !(await visible(p, "#pv")));
+  await p.$eval("#o-search", e => { e.value = ""; e.dispatchEvent(new Event("input")); });
+
+  // 2. image preview
+  await clickRow(p, "#o-list", "Cat photos"); await wait(100); await clickRow(p, "#o-list", "2026"); await wait(100);
+  await clickRow(p, "#o-list", "party.png"); await wait(900);
+  ok(`${label}: image preview loads`, await p.$eval("#pv-body img", i => i.complete && i.naturalWidth > 0).catch(() => false));
+  await p.click("#pv-close");
+
+  // 3. unzip only picked files
+  await checkRow(p, "#o-list", "hello.png"); await checkRow(p, "#o-list", "peek.png");
+  ok(`${label}: picked count on button`, (await text(p, "#o-some")).includes("2 picked"));
+  await p.click("#o-some");
+  ok(`${label}: picked unzip finishes`, await waitView(p, "done"));
+  const where = await text(p, "#d-path");
+  const folder = path.join(DL, where.split(" › ").slice(2).join("/"));
+  const got = fs.existsSync(folder) ? execFileSync("find", [folder, "-type", "f"]).toString().trim().split("\n").map(f => path.basename(f)).sort() : [];
+  ok(`${label}: only the 2 picked files written`, JSON.stringify(got) === '["hello.png","peek.png"]', got);
+  fs.rmSync(folder, { recursive: true, force: true });
+  await p.click("#d-again");
+
+  // 4. locked 7z: cancel, wrong, right
+  await p.click("#go-home");
+  await openFromPicker(p, "Secret plans.7z"); await wait(500);
+  ok(`${label}: password asked`, await visible(p, "#dlg"));
+  await p.type("#dlg-pw", "wrong"); await p.click("#dlg-ok"); await wait(600);
+  ok(`${label}: wrong password message`, (await text(p, "#dlg-err")).includes("not it"));
+  await p.type("#dlg-pw", "meow"); await p.keyboard.press("Enter");
+  ok(`${label}: right password opens (hidden names now visible)`, await waitView(p, "open") && (await p.$$eval("#o-list .row", r => r.length)) === 1);
+  await p.click("#o-all");
+  ok(`${label}: locked 7z unzips`, await waitView(p, "done"));
+  const docs = path.join(DL, (await text(p, "#d-path")).split(" › ").slice(2).join("/"));
+  ok(`${label}: 7z content right`, fs.readFileSync(path.join(docs, "list-3.txt"), "utf8").startsWith("Shopping list 3"));
+  fs.rmSync(docs, { recursive: true, force: true });
+
+  // 5. make a locked .zip from a folder
+  await p.click("#go-home"); await p.click("#home-make"); await wait(200);
+  ok(`${label}: Make button off with nothing picked`, await p.$eval("#m-go", b => b.disabled));
+  await p.click("#m-add-files"); await wait(400);
+  await p.click("#pick-up"); await wait(300);
+  await checkRow(p, "#pick-list", "Pictures"); await p.click("#pick-ok"); await wait(400);
+  ok(`${label}: picked folder listed`, (await p.$$eval("#m-items .row", r => r.length)) === 1);
+  ok(`${label}: name suggested from folder`, (await p.$eval("#m-name", e => e.value)) === "Pictures");
+  await p.click("#m-pw-on"); await p.type("#m-pw", "Purr 9"); await p.type("#m-pw2", "Purr 8");
+  ok(`${label}: mismatched passwords block Make`, await p.$eval("#m-go", b => b.disabled) && (await text(p, "#m-pw-hint")).includes("don't match"));
+  await p.$eval("#m-pw2", e => { e.value = ""; }); await p.type("#m-pw2", "Purr 9");
+  ok(`${label}: zip lock warning mentions Windows`, (await text(p, "#m-pw-hint")).includes("Windows"));
+  await p.click("#m-go");
+  ok(`${label}: zip made`, await waitView(p, "done"));
+  const zipPath = path.join(ROOT, (await text(p, "#d-path")).split(" › ").slice(1).join("/"));
+  ok(`${label}: done screen says packed`, (await text(p, "#d-title")) === "Packed!");
+  const zl = cli("list", zipPath, "Purr 9");
+  ok(`${label}: made zip is locked (AES) and lists 4 pictures`, zl.any_encrypted && zl.entries.filter(e => !e.is_dir).length === 4, zl);
+  const out1 = fs.mkdtempSync(path.join(ROOT, "..", "chk-"));
+  const r1 = cli("extract", zipPath, out1, "Purr 9");
+  const orig = fs.readFileSync(path.join(ROOT, "Pictures/GmCat/done.png"));
+  ok(`${label}: made zip opens byte-exact`, r1.ok && Buffer.compare(fs.readFileSync(path.join(out1, "Pictures/GmCat/done.png")), orig) === 0);
+  ok(`${label}: wrong password refused`, cli("extract", zipPath, out1, "nope").code === "wrong_password");
+  fs.rmSync(out1, { recursive: true, force: true }); fs.rmSync(zipPath);
+  await p.click("#d-again");
+
+  // 6. make a .7z with hidden names
+  await p.click("#home-make"); await wait(200);
+  ok(`${label}: make form reset after success`, (await p.$$eval("#m-items .row", r => r.length)) === 0 && !(await p.$eval("#m-pw-on", c => c.checked)));
+  await p.click("#m-add-files"); await wait(400);
+  await p.click("#pick-up"); await wait(300);
+  await clickRow(p, "#pick-list", "Documents"); await wait(300);
+  await checkRow(p, "#pick-list", "list-1.txt"); await checkRow(p, "#pick-list", "list-2.txt");
+  ok(`${label}: picker counts 2`, (await text(p, "#pick-ok")).includes("2 items"));
+  await p.click("#pick-ok"); await wait(400);
+  await p.click('#m-format button[data-v="SevenZ"]'); await p.click('#m-level button[data-v="Max"]');
+  await p.click("#m-pw-on"); await p.type("#m-pw", "shh"); await p.type("#m-pw2", "shh");
+  ok(`${label}: hide-names option shown for 7z`, await visible(p, "#m-hide-row"));
+  await p.$eval("#m-name", e => { e.value = ""; }); await p.type("#m-name", "My lists");
+  await p.click("#m-go");
+  ok(`${label}: 7z made`, await waitView(p, "done"));
+  const sevenPath = path.join(ROOT, (await text(p, "#d-path")).split(" › ").slice(1).join("/"));
+  ok(`${label}: 7z named as typed`, path.basename(sevenPath) === "My lists.7z", sevenPath);
+  ok(`${label}: 7z names hidden without password`, cli("list", sevenPath).code === "need_password");
+  ok(`${label}: 7z opens with password`, cli("list", sevenPath, "shh").entries.length === 2);
+  fs.rmSync(sevenPath);
+
+  // 7. tar.gz + safety notes on a booby-trapped zip
+  await p.click("#d-again"); await p.click("#go-home");
+  await openFromPicker(p, "evil.zip"); await waitView(p, "open");
+  await p.click("#o-all");
+  ok(`${label}: evil zip finishes`, await waitView(p, "done"));
+  const notes = await text(p, "#d-notes");
+  ok(`${label}: safety notes shown`, notes.includes("skipped to keep your device safe") && notes.includes("changed so they fit"), notes);
+  const evilDir = path.join(DL, (await text(p, "#d-path")).split(" › ").slice(2).join("/"));
+  ok(`${label}: nothing escaped the Download folder`, !fs.existsSync(path.join(ROOT, "evil.txt")) && !fs.existsSync(path.join(DL, "evil.txt")));
+  fs.rmSync(evilDir, { recursive: true, force: true });
+
+  // 8. stop a big job
+  await p.click("#d-again"); await p.click("#go-home");
+  await openFromPicker(p, "big.zip"); await waitView(p, "open");
+  await p.click("#o-all"); await waitView(p, "work"); await wait(300);
+  await p.click("#w-stop");
+  ok(`${label}: stopping returns to the archive`, await waitView(p, "open"));
+  const left = fs.readdirSync(DL).filter(n => n.startsWith("big") && n !== "big.zip" || n.startsWith(".purrzip"));
+  ok(`${label}: nothing half-done left behind`, left.length === 0, left);
+
+  // 9. not an archive
+  await p.click("#go-home");
+  await openFromPicker(p, "not-an-archive.zip");
+  ok(`${label}: friendly error for junk`, await waitView(p, "error") && (await text(p, "#e-text")).includes("doesn't look like an archive"));
+  await p.click("#e-back");
+
+  // 10. Day/Night toggle + About
+  await p.click("#theme");
+  ok(`${label}: theme toggles`, (await p.$eval("html", e => e.dataset.theme)) !== (theme === "dark" ? "dark" : "light"));
+  await p.click("#about-btn");
+  ok(`${label}: about shows version`, (await text(p, "#about-ver")).startsWith("v0."));
+  await p.keyboard.press("Escape");
+  ok(`${label}: Back function on home says 'leave'`, (await p.evaluate(() => window.pzBack())) === false);
+  ok(`${label}: no horizontal scroll`, await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  ok(`${label}: no page errors or native pop-ups`, p.errs.length === 0, p.errs);
+  await p.close();
+}
+await b.close();
+console.log(`\n${pass} passed, ${fails.length} failed`);
+if (fails.length) { console.log("FAILED:\n  " + fails.join("\n  ")); process.exit(1); }
