@@ -11,7 +11,7 @@ const errs = [];
 p.on("pageerror", e => errs.push(String(e)));
 p.on("dialog", d => { errs.push("NATIVE DIALOG: " + d.message()); d.dismiss(); });
 await p.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
-await p.setViewport({ width: 400, height: 860, deviceScaleFactor: 1 });
+await p.setViewport({ width: 400, height: 860, deviceScaleFactor: Number(process.env.DSF || 1) });
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const shot = async n => { await wait(400); await p.screenshot({ path: `${OUT}/${theme}-${n}.png` }); };
 await p.goto(BASE); await shot("1-home");
