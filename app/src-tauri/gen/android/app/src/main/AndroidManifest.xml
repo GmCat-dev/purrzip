@@ -9,11 +9,15 @@
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!-- requestRawExternalStorageAccess: Purrzip writes many files at once, so it asks Android to skip its
+         media-library bookkeeping for each one (several times faster) and reports new files itself
+         afterwards (MainActivity: Bridge.scan). Only works together with "all files access". -->
     <application
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.purrzip_app"
         android:requestLegacyExternalStorage="true"
+        android:requestRawExternalStorageAccess="true"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"

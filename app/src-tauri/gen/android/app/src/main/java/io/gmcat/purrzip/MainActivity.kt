@@ -7,6 +7,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -72,6 +73,17 @@ class MainActivity : TauriActivity() {
           ActivityCompat.requestPermissions(this@MainActivity,
             arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), 7)
         }
+      }
+    }
+
+    // Purrzip writes files directly (see requestRawExternalStorageAccess in the manifest), so it tells
+    // Android's media library about what it made: unzipped photos show up in the gallery right away.
+    // A folder is scanned with everything inside it.
+    @JavascriptInterface
+    fun scan(path: String) {
+      try {
+        MediaScannerConnection.scanFile(applicationContext, arrayOf(path), null, null)
+      } catch (e: Exception) {
       }
     }
 

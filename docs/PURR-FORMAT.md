@@ -22,8 +22,10 @@ A .purr holds files and folders, like a .zip or .7z. It differs in five ways:
 
 Design rules: every squeezing method is an existing, documented stream format with other
 implementations (Zstandard RFC 8878, XZ, PPMd7/variant H, Lepton). Every byte that is read back
-is checked. Memory to unpack stays under about 100 MB whatever the archive size (plus the
-dictionary of the method used, at most 64 MiB as written by Purrzip).
+is checked. Memory to unpack does not grow with the archive: it is bounded by the largest window
+a pack uses (128 MiB as written by Purrzip) plus the photos being restored at that moment.
+Measured with Purrzip 0.2: about 80 MB for folders of text and programs, and 240 to 270 MB for a
+324 MB folder holding 2,600 photos (phone and PC).
 
 ## Layout
 
@@ -180,5 +182,7 @@ most 32 MiB of data, and P = 3% of a group (at least 2). Repair needs no passwor
 
 Chunking uses FastCDC (16 KiB minimum, 64 KiB average, 256 KiB maximum); a shrunk photo is one
 chunk. Files are sorted by kind, then by type, then by path, so similar files share a pack.
-Packs hold up to 16, 32 or 64 MiB depending on the level. Every photo is shrunk, restored and
-compared with the original before its Lepton stream is accepted. A reader needs none of this.
+Packs hold up to 16, 32 or 128 MiB depending on the level; packs of photos and already-packed
+files hold up to 128 MiB at every level, so far-apart repeats are still found (phones use smaller
+packs to save memory). Every photo is shrunk, restored and compared with the original before its
+Lepton stream is accepted. A reader needs none of this.

@@ -576,6 +576,9 @@
       $("m-pw-on").checked = false; $("m-pw-box").hidden = true; $("m-pw").value = ""; $("m-pw2").value = "";
     }
     $("d-show").textContent = job.kind === "repair" ? "Open it" : "Show it";
+    // Android: Purrzip writes files directly (much faster), so it tells the phone's media library what is new.
+    var A = window.PurrzipAndroid;
+    if (A && A.scan) { try { A.scan(String(job.kind === "extract" ? res.folder : res.path)); } catch (e) {} }
     var c = $("d-cat"); c.classList.remove("pop"); void c.offsetWidth; c.classList.add("pop");
     show("done");
   }

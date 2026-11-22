@@ -85,6 +85,9 @@ pub struct Sink<'a> {
     last_tick: u64,
     progress: &'a dyn Progress,
     taken: HashSet<String>,
+    /// Folders this run has already made and checked. Saves several look-ups per file, which
+    /// matters on phones where each one goes through Android's storage service.
+    ok_dirs: HashSet<PathBuf>,
     report: Report,
 }
 
@@ -94,7 +97,7 @@ impl<'a> Sink<'a> {
         if !root.is_dir() {
             return Err(Error::Other("The destination isn't a folder.".into()));
         }
-        Ok(Sink { root, total, done: 0, last_tick: 0, progress, taken: HashSet::new(), report: Report::default() })
+        Ok(Sink { root, total, done: 0, last_tick: 0, progress, taken: HashSet::new(), ok_dirs: HashSet::new(), report: Report::default() })
     }
 
     pub fn check(&self) -> Result<()> {
@@ -133,11 +136,14 @@ impl<'a> Sink<'a> {
             return Ok(());
         };
         let p = parts.iter().fold(self.root.clone(), |p, c| p.join(c));
-        if p.exists() && !p.is_dir() {
-            self.skip(name, "a file with that name is already there");
-            return Ok(());
+        if !self.ok_dirs.contains(&p) {
+            if p.exists() && !p.is_dir() {
+                self.skip(name, "a file with that name is already there");
+                return Ok(());
+            }
+            self.ensure_dir(&p)?;
+            self.ok_dirs.insert(p);
         }
-        self.ensure_dir(&p)?;
         self.report.folders += 1;
         self.report.written.push((index, parts.join("/")));
         Ok(())
@@ -153,11 +159,14 @@ impl<'a> Sink<'a> {
         };
         let file_name = parts.pop().unwrap();
         let parent = parts.iter().fold(self.root.clone(), |p, c| p.join(c));
-        if parent.exists() && !parent.is_dir() {
-            self.skip(name, "its folder name is already used by a file");
-            return Ok(None);
+        if !self.ok_dirs.contains(&parent) {
+            if parent.exists() && !parent.is_dir() {
+                self.skip(name, "its folder name is already used by a file");
+                return Ok(None);
+            }
+            self.ensure_dir(&parent)?;
+            self.ok_dirs.insert(parent.clone());
         }
-        self.ensure_dir(&parent)?;
         let rel_parent = parts.join("/");
         let mut candidate = file_name.clone();
         let mut n = 1;
