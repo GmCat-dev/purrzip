@@ -47,8 +47,11 @@ pub(crate) fn tuning(level: Level, low: bool) -> Tuning {
             photos: true,
             max_pixels,
         },
-        // The strongest settings need the most memory per worker (about 0.8 GB), so few workers.
-        Level::Max => Tuning { pack_bytes: (if low { 32 } else { 64 }) << 20, pack_workers: if low || cores < 8 { 1 } else { 2 }, photo_workers, photos: true, max_pixels },
+        // The strongest settings need the most memory (about 0.9 GB for one worker), so one worker:
+        // slower, but safe on an 8 GB laptop.
+        // Packs are twice the 64 MiB dictionary: measured, a folder of programs came out 2.4% bigger
+        // with 64 MiB packs, because every new pack starts with an empty dictionary.
+        Level::Max => Tuning { pack_bytes: (if low { 32 } else { 128 }) << 20, pack_workers: 1, photo_workers, photos: true, max_pixels },
     }
 }
 
@@ -263,9 +266,11 @@ impl<'a> W<'a> {
             self.stop.store(true, Ordering::Relaxed);
             return Err(Error::Cancelled);
         }
+        // Done = read so far, minus what is still waiting (in the open pack or with the workers),
+        // plus how far the workers have got. It never goes backwards.
         let working: u64 = self.cells.iter().map(|(len, c)| c.load(Ordering::Relaxed).min(*len)).sum();
-        let done = (self.read_done + working).saturating_sub(self.in_pool).min(self.total);
-        if force || done.abs_diff(self.last_report) >= 256 * 1024 {
+        let done = (self.read_done + working).saturating_sub(self.in_pool + self.cur.len() as u64).min(self.total).max(self.last_report);
+        if force || done - self.last_report >= 256 * 1024 {
             self.last_report = done;
             self.progress.update(done, self.total, &self.current);
         }

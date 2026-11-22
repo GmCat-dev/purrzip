@@ -31,7 +31,7 @@ async fn pz(state: tauri::State<'_, AppState>, cmd: String, args: Value) -> Resu
     let svc = state.svc.clone();
     tauri::async_runtime::spawn_blocking(move || svc.call(&cmd, &args))
         .await
-        .map_err(|e| Fail { code: "other".into(), message: e.to_string() })?
+        .map_err(|e| Fail { code: "other".into(), message: e.to_string(), repairable: false })?
 }
 
 #[cfg(target_os = "android")]

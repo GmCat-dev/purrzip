@@ -23,7 +23,7 @@ pub const TRANSFORM_NONE: u8 = 0;
 pub const TRANSFORM_LEPTON: u8 = 1;
 
 /// Hard limits a reader enforces (far above anything the writer produces).
-pub const MAX_INDEX_RAW: u64 = 1 << 30;
+pub const MAX_INDEX_RAW: u64 = 256 << 20;
 pub const MAX_PACK_RAW: u64 = 1 << 30;
 pub const MAX_BLOB: u64 = 256 << 20;
 
