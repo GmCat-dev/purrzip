@@ -28,6 +28,11 @@ use std::sync::Arc;
 
 pub(crate) struct Tuning {
     pub pack_bytes: usize,
+    /// Pack size for photos and already-packed files. These only get the fast long-range pass,
+    /// which costs little memory, and a bigger pack lets it see repeats that are further apart
+    /// (measured: a folder holding the same pictures twice with different labels went from
+    /// 187 MB to under 160 MB).
+    pub store_pack_bytes: usize,
     pub pack_workers: usize,
     pub photo_workers: usize,
     pub photos: bool,
@@ -38,10 +43,12 @@ pub(crate) fn tuning(level: Level, low: bool) -> Tuning {
     let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
     let photo_workers = cores.min(if low { 3 } else { 8 });
     let max_pixels = if low { jpeg::MAX_JPEG_PIXELS_LOW_MEM } else { jpeg::MAX_JPEG_PIXELS };
+    let store_pack_bytes = (if low { 32 } else { 128 }) << 20;
     match level {
-        Level::Store | Level::Fast => Tuning { pack_bytes: (if low { 8 } else { 16 }) << 20, pack_workers: cores.min(if low { 2 } else { 4 }), photo_workers: 1, photos: false, max_pixels: 0 },
+        Level::Store | Level::Fast => Tuning { pack_bytes: (if low { 8 } else { 16 }) << 20, store_pack_bytes, pack_workers: cores.min(if low { 2 } else { 4 }), photo_workers: 1, photos: false, max_pixels: 0 },
         Level::Normal => Tuning {
             pack_bytes: (if low { 16 } else { 32 }) << 20,
+            store_pack_bytes,
             pack_workers: if low { cores.min(2) } else { cores.saturating_sub(1).clamp(1, 3) },
             photo_workers,
             photos: true,
@@ -51,7 +58,7 @@ pub(crate) fn tuning(level: Level, low: bool) -> Tuning {
         // slower, but safe on an 8 GB laptop.
         // Packs are twice the 64 MiB dictionary: measured, a folder of programs came out 2.4% bigger
         // with 64 MiB packs, because every new pack starts with an empty dictionary.
-        Level::Max => Tuning { pack_bytes: (if low { 32 } else { 128 }) << 20, pack_workers: 1, photo_workers, photos: true, max_pixels },
+        Level::Max => Tuning { pack_bytes: (if low { 32 } else { 128 }) << 20, store_pack_bytes, pack_workers: 1, photo_workers, photos: true, max_pixels },
     }
 }
 
@@ -548,6 +555,7 @@ pub(crate) fn write_purr(items: &[Item], part: &Path, opts: &PurrOptions, progre
                 hand_over(&mut w, &mut pack_pool)?;
                 cur_kind = Some(p.kind);
                 w.cur_recipes = recipes(opts.level, low, p.kind);
+                w.pack_bytes = if matches!(p.kind, Kind::Photo | Kind::Packed) { t.store_pack_bytes } else { t.pack_bytes };
             }
             let it = &items[p.item];
             w.current = it.name.clone();

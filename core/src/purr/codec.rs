@@ -72,7 +72,7 @@ pub fn compress_ticking(recipe: &Recipe, raw: &[u8], tick: &mut dyn FnMut(usize)
                 e.long_distance_matching(true).map_err(io_err)?;
             }
             // Window just big enough for the whole pack (so far-apart repeats are found), never over the reader's limit.
-            let wlog = (usize::BITS - raw.len().max(2).saturating_sub(1).leading_zeros()).clamp(17, ZSTD_WINDOW_LOG_MAX - 1);
+            let wlog = (usize::BITS - raw.len().max(2).saturating_sub(1).leading_zeros()).clamp(17, ZSTD_WINDOW_LOG_MAX);
             e.window_log(wlog).map_err(io_err)?;
             e.include_checksum(false).map_err(io_err)?;
             e.set_pledged_src_size(Some(raw.len() as u64)).map_err(io_err)?;
