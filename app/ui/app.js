@@ -41,8 +41,10 @@
   // `path` is the archive that failed; a damaged .purr with repair data gets a "Try to repair" button.
   function fail(title, err, path) {
     $("e-title").textContent = title;
-    $("e-text").textContent = friendly(err);
     S.repairPath = err && err.repairable && path ? path : null;
+    $("e-text").textContent = S.repairPath
+      ? "This archive is damaged, but it carries repair data, so Purrzip can try to fix it. Your file stays as it is; the fix goes into a copy."
+      : friendly(err);
     $("e-repair").hidden = !S.repairPath;
     $("e-back").classList.toggle("primary", !S.repairPath);
     show("error");
@@ -405,6 +407,9 @@
     }
     $("m-hide-row").hidden = S.make.format !== "SevenZ";
     $("m-kind-hint").hidden = S.make.format !== "Purr";
+    $("m-level-hint").textContent = S.make.format === "Purr"
+      ? "Fast finds repeats but leaves photos as they are. Normal and Smallest also shrink photos; Smallest takes the longest."
+      : "Photos, videos and other zips are already squeezed, so they're stored as they are.";
     $("m-repair-row").hidden = S.make.format !== "Purr";
     $("m-go").disabled = !S.make.items.length || (pwOn && (!a || a !== b));
   }

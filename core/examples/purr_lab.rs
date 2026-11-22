@@ -120,6 +120,13 @@ fn main() {
                     o.lzma_options.nice_len = v[2];
                     o.lzma_options.depth_limit = v[3] as i32;
                     o.lzma_options.lc = v[4];
+                    if v.len() > 6 {
+                        o.lzma_options.lp = v[5];
+                        o.lzma_options.pb = v[6];
+                    }
+                    if v.len() > 7 && v[7] == 1 {
+                        o.prepend_pre_filter(lzma_rust2::FilterType::BcjX86, 0);
+                    }
                     o.set_check_sum_type(lzma_rust2::CheckType::None);
                     let mut w = lzma_rust2::XzWriter::new(Vec::new(), o).unwrap();
                     w.write_all(d).unwrap();
