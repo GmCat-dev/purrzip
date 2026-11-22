@@ -15,6 +15,7 @@ mod fmt_rar;
 mod fmt_sevenz;
 mod fmt_stream;
 mod fmt_zip;
+pub mod purr;
 pub mod safe;
 
 pub use create::{create, CreateFormat, CreateOptions, Level};
@@ -36,6 +37,7 @@ pub enum Format {
     Zst,
     Iso,
     Cab,
+    Purr,
 }
 
 impl Format {
@@ -55,6 +57,7 @@ impl Format {
             Format::Zst => "ZST",
             Format::Iso => "ISO",
             Format::Cab => "CAB",
+            Format::Purr => "PURR",
         }
     }
 }
@@ -82,6 +85,9 @@ pub struct Listing {
     pub any_encrypted: bool,
     /// True when sizes are estimates (single gz/bz2/xz/zst streams).
     pub size_unknown: bool,
+    /// Extra facts for .purr archives.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purr: Option<purr::PurrInfo>,
 }
 
 #[derive(Debug, Default, Clone, serde::Serialize)]
@@ -161,6 +167,9 @@ pub fn detect(path: &Path) -> Result<Format> {
     head.truncate(n);
     let starts = |m: &[u8]| head.len() >= m.len() && &head[..m.len()] == m;
 
+    if purr::is_purr(&head) {
+        return Ok(Format::Purr);
+    }
     if starts(b"PK\x03\x04") || starts(b"PK\x05\x06") || starts(b"PK\x07\x08") {
         return Ok(Format::Zip);
     }
@@ -207,24 +216,34 @@ pub fn detect(path: &Path) -> Result<Format> {
     if fmt_zip::has_end_record(path) {
         return Ok(Format::Zip);
     }
+    // A .purr whose first bytes are damaged still ends with its repair data, or at least has its name.
+    if purr::recovery::locate_tail(&mut f).is_some() || path.extension().map(|e| e.eq_ignore_ascii_case("purr")).unwrap_or(false) {
+        return Ok(Format::Purr);
+    }
     Err(Error::Unknown)
 }
 
 /// List what is inside.
 pub fn list(path: &Path, password: Option<&str>) -> Result<Listing> {
     let format = detect(path)?;
+    let mut purr_info = None;
     let (entries, size_unknown) = match format {
         Format::Zip => (fmt_zip::list(path)?, false),
         Format::SevenZ => (fmt_sevenz::list(path, password)?, false),
         Format::Rar => (fmt_rar::list(path, password)?, false),
         Format::Iso => (fmt_iso::list(path)?, false),
         Format::Cab => (fmt_cab::list(path)?, false),
+        Format::Purr => {
+            let (entries, info) = purr::list(path, password)?;
+            purr_info = Some(info);
+            (entries, false)
+        }
         Format::Gz | Format::Bz2 | Format::Xz | Format::Zst => (fmt_stream::list_single(path, format)?, true),
         _ => (fmt_stream::list_tar(path, format)?, false),
     };
     let total_size = entries.iter().map(|e| e.size).sum();
     let any_encrypted = entries.iter().any(|e| e.encrypted);
-    Ok(Listing { format, entries, total_size, any_encrypted, size_unknown })
+    Ok(Listing { format, entries, total_size, any_encrypted, size_unknown, purr: purr_info })
 }
 
 /// Extract everything (or only `only`, a list of entry indexes) into `dest`.
@@ -264,6 +283,7 @@ pub fn extract_listed(
         Format::Rar => fmt_rar::extract(path, password, &wanted, &mut sink)?,
         Format::Iso => fmt_iso::extract(path, &wanted, &mut sink)?,
         Format::Cab => fmt_cab::extract(path, &wanted, &mut sink)?,
+        Format::Purr => purr::extract(path, password, &wanted, &mut sink)?,
         Format::Gz | Format::Bz2 | Format::Xz | Format::Zst => {
             if wanted.has(0) {
                 fmt_stream::extract_single(path, format, &listing.entries[0], &mut sink)?

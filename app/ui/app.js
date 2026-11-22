@@ -38,9 +38,13 @@
     wrong_password: "That password doesn't open this archive.",
   };
   function friendly(err) { return FRIENDLY[err && err.code] || (err && err.message) || "Something went wrong."; }
-  function fail(title, err) {
+  // `path` is the archive that failed; a damaged .purr with repair data gets a "Try to repair" button.
+  function fail(title, err, path) {
     $("e-title").textContent = title;
     $("e-text").textContent = friendly(err);
+    S.repairPath = err && err.repairable && path ? path : null;
+    $("e-repair").hidden = !S.repairPath;
+    $("e-back").classList.toggle("primary", !S.repairPath);
     show("error");
   }
 
@@ -179,7 +183,7 @@
     else if (P.mode === "view") ok.textContent = "Close";
     ok.disabled = false;
   }
-  function looksArchive(n) { return /\.(zip|7z|rar|tar|tgz|gz|bz2|xz|zst|iso|cab|tbz2|txz|jar|apk)$/i.test(n); }
+  function looksArchive(n) { return /\.(zip|7z|purr|rar|tar|tgz|gz|bz2|xz|zst|iso|cab|tbz2|txz|jar|apk)$/i.test(n); }
   function closePicker(v) { $("pick").hidden = true; var p = P; P = null; if (p) p.resolve(v); }
   $("pick-close").onclick = function () { closePicker(null); };
   $("pick-ok").onclick = function () {
@@ -206,7 +210,7 @@
         return openArchive(path, pw);
       }
       S.open = null;
-      return fail("Couldn't open " + baseName(path), e);
+      return fail("Couldn't open " + baseName(path), e, path);
     }
     S.open = { path: path, password: password || "", listing: listing, cwd: "", selected: new Set(), search: "", dest: null };
     S.open.tree = buildTree(listing.entries);
@@ -214,7 +218,7 @@
     $("o-name").textContent = listing.name;
     $("o-format").textContent = listing.label;
     var files = listing.entries.filter(function (e) { return !e.is_dir && !e.special; }).length;
-    $("o-summary").textContent = plural(files, "file") + (listing.size_unknown ? "" : " · " + size(listing.total_size) + " unpacked") + " · " + size(listing.file_size) + " packed" + (listing.any_encrypted || password ? " · 🔒" : "");
+    $("o-summary").textContent = plural(files, "file") + (listing.size_unknown ? "" : " · " + size(listing.total_size) + " unpacked") + " · " + size(listing.file_size) + " packed" + (listing.any_encrypted || password ? " · 🔒" : "") + (listing.purr && listing.purr.repair_data ? " · repair data ✓" : "");
     $("o-search").value = "";
     $("o-dest").textContent = S.open.dest ? nicePath(S.open.dest) : "(pick a folder)";
     renderOpen();
@@ -395,10 +399,13 @@
     var hint = $("m-pw-hint");
     if (pwOn) {
       if (S.make.format === "Zip") hint.textContent = "Strong AES-256 lock. Opens in Purrzip, 7-Zip and WinRAR. Windows' and Mac's built-in openers can't open locked ZIPs.";
+      else if (S.make.format === "Purr") hint.textContent = "Strong lock. The file names are hidden too, so nobody can see what's inside without the password.";
       else hint.textContent = "Strong AES-256 lock.";
       if (a && b && a !== b) hint.textContent = "The two passwords don't match yet.";
     }
     $("m-hide-row").hidden = S.make.format !== "SevenZ";
+    $("m-kind-hint").hidden = S.make.format !== "Purr";
+    $("m-repair-row").hidden = S.make.format !== "Purr";
     $("m-go").disabled = !S.make.items.length || (pwOn && (!a || a !== b));
   }
   async function addItems(paths) {
@@ -453,7 +460,7 @@
     var M = S.make;
     if (!M.dest) { var d = await chooseFolder(null, "Save the archive in which folder?"); if (!d) return; M.dest = d; renderMake(); }
     var pw = $("m-pw-on").checked ? $("m-pw").value : null;
-    var opts = { format: M.format, level: M.level, password: pw, hide_names: M.format === "SevenZ" && !!pw && $("m-hide").checked };
+    var opts = { format: M.format, level: M.level, password: pw, hide_names: M.format === "SevenZ" && !!pw && $("m-hide").checked, repair: M.format === "Purr" && $("m-repair").checked };
     var r;
     try { r = await PZ.call("create", { sources: M.items.map(function (i) { return i.path; }), out_dir: M.dest, name: $("m-name").value, options: opts }); }
     catch (e) { return fail("Couldn't start", e); }
@@ -463,7 +470,7 @@
   // ---------- jobs ----------
   function runJob(id, kind, extra) {
     S.job = { id: id, kind: kind, extra: extra, started: Date.now() };
-    $("w-title").textContent = kind === "create" ? "Packing…" : "Unzipping…";
+    $("w-title").textContent = kind === "create" ? "Packing…" : kind === "repair" ? "Repairing…" : "Unzipping…";
     $("w-pct").textContent = "0%"; $("w-bar").firstElementChild.style.width = "0";
     $("w-file").textContent = " "; $("w-bytes").textContent = " ";
     $("w-stop").disabled = false; $("w-stop").textContent = "Stop";
@@ -487,7 +494,7 @@
     if (j.status === "done") return done(job, j.result);
     if (j.status === "cancelled") {
       toast("Stopped. Nothing half-done was left behind.");
-      return show(job.kind === "create" ? "make" : "open");
+      return show(job.kind === "create" ? "make" : job.kind === "repair" || !S.open ? "home" : "open");
     }
     var err = j.error || {};
     if (job.kind === "extract" && (err.code === "wrong_password" || err.code === "need_password")) {
@@ -497,7 +504,8 @@
       S.open.password = pw;
       return startExtract(job.extra.only);
     }
-    fail(job.kind === "create" ? "Couldn't make the archive" : "Couldn't unzip it", err);
+    if (job.kind === "repair") return fail("Couldn't repair it", err);
+    fail(job.kind === "create" ? "Couldn't make the archive" : "Couldn't unzip it", err, job.kind === "extract" && S.open ? S.open.path : null);
   }
   $("w-stop").onclick = function () {
     if (!S.job) return;
@@ -526,6 +534,17 @@
           var ul2 = el("ul"); renamed.slice(0, 50).forEach(function (s) { ul2.appendChild(el("li", null, s[0] + " → " + s[1])); }); notes.appendChild(ul2);
         }
       }
+    } else if (job.kind === "repair") {
+      var rr = res.report;
+      $("d-cat").src = "img/done.png";
+      if (rr.clean) {
+        $("d-title").textContent = "Nothing to fix";
+        $("d-text").textContent = "The repair data says this archive is whole.";
+      } else {
+        $("d-title").textContent = "Repaired!";
+        $("d-text").textContent = "Fixed " + plural(rr.damaged + rr.damaged_repair_data, "damaged spot") + ". The repaired copy is saved next to the original, which was left as it is.";
+      }
+      $("d-path").textContent = nicePath(res.path);
     } else {
       var r = res.report;
       $("d-cat").src = "img/party.png";
@@ -538,21 +557,41 @@
         notes.appendChild(el("b", null, plural(r.skipped.length, "item") + " left out:"));
         var ul3 = el("ul"); r.skipped.slice(0, 50).forEach(function (s) { ul3.appendChild(el("li", null, s[0] + " (" + s[1] + ")")); }); notes.appendChild(ul3);
       }
+      if (r.purr && (r.purr.dup_bytes || r.purr.jpeg_count)) {
+        // what .purr did beyond ordinary squeezing
+        notes.hidden = false;
+        notes.appendChild(el("b", null, "What .purr did:"));
+        var ulp = el("ul");
+        if (r.purr.dup_bytes) ulp.appendChild(el("li", null, "Found " + size(r.purr.dup_bytes) + " of repeats and stored them only once."));
+        if (r.purr.jpeg_count) ulp.appendChild(el("li", null, "Shrunk " + plural(r.purr.jpeg_count, "photo") + " from " + size(r.purr.jpeg_in) + " to " + size(r.purr.jpeg_out) + " without changing them."));
+        notes.appendChild(ulp);
+      }
       S.make.items = []; $("m-name").value = "Archive"; $("m-name").dataset.touched = "";
+      $("m-repair").checked = false;
       $("m-pw-on").checked = false; $("m-pw-box").hidden = true; $("m-pw").value = ""; $("m-pw2").value = "";
     }
+    $("d-show").textContent = job.kind === "repair" ? "Open it" : "Show it";
     var c = $("d-cat"); c.classList.remove("pop"); void c.offsetWidth; c.classList.add("pop");
     show("done");
   }
+  $("e-repair").onclick = async function () {
+    var path = S.repairPath; if (!path) return;
+    var r;
+    try { r = await PZ.call("repair", { path: path }); }
+    catch (e) { return fail("Couldn't repair it", e); }
+    S.open = null;
+    runJob(r.id, "repair", {});
+  };
   $("d-show").onclick = async function () {
     var r = S.lastResult; if (!r) return;
+    if (r.kind === "repair") return openArchive(r.res.path);
     var p = r.kind === "extract" ? r.res.folder : r.res.path;
     if (await PZ.reveal(p)) return;
     var folder = r.kind === "extract" && !r.res.single ? p : p.slice(0, Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")));
     picker("view", folder, "Your files");
   };
   $("d-again").onclick = function () { show(S.lastResult && S.lastResult.kind === "extract" && S.open ? "open" : "home"); if (S.open) renderOpen(); };
-  $("e-back").onclick = function () { show(S.open ? "open" : "home"); };
+  $("e-back").onclick = function () { show(S.open ? "open" : "home"); if (S.open) renderOpen(); };
 
   // ---------- home + misc ----------
   $("go-home").onclick = function () { if (!S.job) show("home"); };

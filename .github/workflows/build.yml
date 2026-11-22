@@ -45,6 +45,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - if: matrix.os == 'ubuntu-22.04'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      # The engine's tests on this system too: archives made on Linux must unpack to identical
+      # bytes on Windows and on Apple-chip Macs (photos, squeezing methods, lock, repair).
+      - run: cargo test --release -p purrzip-core
       - run: npm ci
         working-directory: app
       - uses: tauri-apps/tauri-action@v0

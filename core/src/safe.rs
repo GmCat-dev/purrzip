@@ -234,6 +234,19 @@ impl<'a> Sink<'a> {
         self.tick(name, true);
     }
 
+    /// For readers that write files out of order (.purr): count bytes as they land.
+    pub fn progress(&mut self, bytes: u64, name: &str) {
+        self.done += bytes;
+        self.tick(name, false);
+    }
+
+    /// ...and record a file once it is complete (bytes were already counted by `progress`).
+    pub fn mark_written(&mut self, index: usize, rel: String, bytes: u64) {
+        self.report.files += 1;
+        self.report.bytes += bytes;
+        self.report.written.push((index, rel));
+    }
+
     pub fn finish(mut self) -> Report {
         self.progress.update(self.done, self.total.max(self.done), "");
         std::mem::take(&mut self.report)

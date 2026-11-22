@@ -1,20 +1,32 @@
 [package]
 name = "purrzip-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
+aead-stream = { version = "0.6.0", features = ["alloc"] }
+argon2 = "0.6.0"
+blake3 = "1.8.7"
 bzip2 = "0.6.1"
 cab = "0.6.0"
+chacha20poly1305 = "0.11.0"
+crc32fast = "1.5.5"
+fastcdc = "5.0.0"
 flate2 = "1.1.11"
+getrandom = "0.4.3"
+lepton_jpeg = "0.5.8"
 lzma-rust2 = "0.25.0"
+ppmd-rust = "1.5.2"
+reed-solomon-simd = "3.1.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sevenz-rust2 = { version = "0.25.0", features = ["aes256", "compress"] }
 tar = "0.4.46"
 thiserror = "2.0.21"
+unicode-normalization = "0.1.26"
 unrar = "0.5.8"
 walkdir = "2.5.1"
+zeroize = "1.9.2"
 zip = { version = "9.8.1", default-features = false, features = ["aes-crypto", "deflate", "deflate64", "bzip2", "zstd", "lzma", "time"] }
 zstd = "0.14.4"
 

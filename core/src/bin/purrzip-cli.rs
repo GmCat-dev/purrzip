@@ -2,7 +2,9 @@
 //! purrzip-cli list <archive> [password]
 //! purrzip-cli extract <archive> <dest> [password] [--only 0,3,5]
 //! purrzip-cli test <archive> [password]
-//! purrzip-cli create <zip|7z> <store|fast|normal|max> <out> [--password X] [--hide-names] <sources...>
+//! purrzip-cli create <zip|7z|purr> <store|fast|normal|max> <out> [--password X] [--hide-names] [--repair] [--low-memory] <sources...>
+//! purrzip-cli repair <damaged.purr> <repaired.purr>      (uses the archive's repair data; never changes the original)
+//! purrzip-cli verify <archive.purr>                      (checks an archive against its repair data)
 
 use purrzip_core::*;
 use std::path::{Path, PathBuf};
@@ -49,7 +51,11 @@ fn main() {
             Err(e) => fail(e),
         },
         "create" => {
-            let format = if a[1] == "7z" { CreateFormat::SevenZ } else { CreateFormat::Zip };
+            let format = match a[1].as_str() {
+                "7z" => CreateFormat::SevenZ,
+                "purr" => CreateFormat::Purr,
+                _ => CreateFormat::Zip,
+            };
             let level = match a[2].as_str() {
                 "store" => Level::Store,
                 "fast" => Level::Fast,
@@ -59,6 +65,7 @@ fn main() {
             let out = PathBuf::from(&a[3]);
             let mut password = None;
             let mut hide_names = false;
+            let (mut repair, mut low_memory) = (false, false);
             let mut sources = Vec::new();
             let mut i = 4;
             while i < a.len() {
@@ -68,18 +75,28 @@ fn main() {
                         i += 1;
                     }
                     "--hide-names" => hide_names = true,
+                    "--repair" => repair = true,
+                    "--low-memory" => low_memory = true,
                     s => sources.push(PathBuf::from(s)),
                 }
                 i += 1;
             }
-            let opts = CreateOptions { format, level, password, hide_names };
+            let opts = CreateOptions { format, level, password, hide_names, repair, low_memory };
             match create(&sources, &out, &opts, &Print) {
                 Ok(r) => println!("{}", serde_json::to_string(&serde_json::json!({"ok": true, "report": r})).unwrap()),
                 Err(e) => fail(e),
             }
         }
+        "repair" => match purr::repair(Path::new(&a[1]), Path::new(&a[2]), &Print) {
+            Ok(r) => println!("{}", serde_json::json!({"ok": true, "report": r})),
+            Err(e) => fail(e),
+        },
+        "verify" => match purr::verify(Path::new(&a[1]), &Print) {
+            Ok(r) => println!("{}", serde_json::json!({"ok": true, "report": r})),
+            Err(e) => fail(e),
+        },
         _ => {
-            eprintln!("usage: purrzip-cli list|extract|test|create ...");
+            eprintln!("usage: purrzip-cli list|extract|test|create|repair|verify ...");
             std::process::exit(1);
         }
     }

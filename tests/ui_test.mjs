@@ -24,16 +24,28 @@ async function fresh(width, height, theme) {
   await p.setViewport({ width, height });
   await p.goto(BASE);
   await p.waitForSelector("#home-open");
+  // Bring a control to the middle of the screen before clicking it (the button bar sticks to the bottom).
+  const rawClick = p.click.bind(p);
+  p.click = async (sel, opts) => { await p.$eval(sel, e => e.scrollIntoView({ block: "center" })); return rawClick(sel, opts); };
   return p;
 }
-const clickRow = (p, sel, text) => p.evaluate((sel, text) => {
-  const r = [...document.querySelectorAll(sel + " .row")].find(r => r.querySelector(".nm")?.textContent.trim().startsWith(text));
-  if (!r) return false; r.click(); return true;
-}, sel, text);
-const checkRow = (p, sel, text) => p.evaluate((sel, text) => {
-  const r = [...document.querySelectorAll(sel + " .row")].find(r => r.querySelector(".nm")?.textContent.trim().startsWith(text));
-  if (!r) return false; r.querySelector("input").click(); return true;
-}, sel, text);
+// Rows appear a moment after a folder is opened: poll for them instead of guessing a delay.
+async function findRow(p, sel, text, act) {
+  const t = Date.now();
+  while (Date.now() - t < 8000) {
+    const done = await p.evaluate((sel, text, act) => {
+      const r = [...document.querySelectorAll(sel + " .row")].find(r => r.querySelector(".nm")?.textContent.trim().startsWith(text));
+      if (!r) return false;
+      (act === "check" ? r.querySelector("input") : r).click();
+      return true;
+    }, sel, text, act);
+    if (done) return true;
+    await wait(100);
+  }
+  return false;
+}
+const clickRow = (p, sel, text) => findRow(p, sel, text, "click");
+const checkRow = (p, sel, text) => findRow(p, sel, text, "check");
 const visible = (p, id) => p.$eval(id, e => !e.hidden && !e.closest("[hidden]"));
 const text = (p, sel) => p.$eval(sel, e => e.textContent);
 async function waitView(p, view, ms = 15000) {
@@ -116,7 +128,7 @@ for (const [label, w, h, theme] of [["phone/day", 390, 844, "light"], ["desktop/
   const zipPath = path.join(ROOT, (await text(p, "#d-path")).split(" › ").slice(1).join("/"));
   ok(`${label}: done screen says packed`, (await text(p, "#d-title")) === "Packed!");
   const zl = cli("list", zipPath, "Purr 9");
-  ok(`${label}: made zip is locked (AES) and lists 4 pictures`, zl.any_encrypted && zl.entries.filter(e => !e.is_dir).length === 4, zl);
+  ok(`${label}: made zip is locked (AES) and lists 7 pictures`, zl.any_encrypted && zl.entries.filter(e => !e.is_dir).length === 7, zl.entries.length);
   const out1 = fs.mkdtempSync(path.join(ROOT, "..", "chk-"));
   const r1 = cli("extract", zipPath, out1, "Purr 9");
   const orig = fs.readFileSync(path.join(ROOT, "Pictures/GmCat/done.png"));
@@ -165,6 +177,69 @@ for (const [label, w, h, theme] of [["phone/day", 390, 844, "light"], ["desktop/
   ok(`${label}: stopping returns to the archive`, await waitView(p, "open"));
   const left = fs.readdirSync(DL).filter(n => n.startsWith("big") && n !== "big.zip" || n.startsWith(".purrzip"));
   ok(`${label}: nothing half-done left behind`, left.length === 0, left);
+
+  // 8b. .purr: repeats stored once, photos shrunk, repair data, lock, and the repair flow
+  await p.click("#go-home"); await p.click("#home-make"); await wait(200);
+  await p.click("#m-add-files"); await wait(400);
+  await p.click("#pick-up"); await wait(300);
+  await checkRow(p, "#pick-list", "Pictures"); await p.click("#pick-ok"); await wait(400);
+  ok(`${label}: .purr hint hidden for zip`, !(await visible(p, "#m-kind-hint")) && !(await visible(p, "#m-repair-row")));
+  await p.click('#m-format button[data-v="Purr"]');
+  ok(`${label}: .purr explains itself and offers repair data`, (await visible(p, "#m-kind-hint")) && (await visible(p, "#m-repair-row")) && !(await visible(p, "#m-hide-row")));
+  await p.click("#m-repair");
+  await p.$eval("#m-name", e => { e.value = ""; }); await p.type("#m-name", "Backup");
+  await p.click("#m-go");
+  ok(`${label}: purr made`, await waitView(p, "done", 60000) && (await text(p, "#d-title")) === "Packed!", await p.evaluate(() => ({ view: [...document.querySelectorAll(".view")].find(v => !v.hidden).id, go: document.getElementById("m-go").disabled, items: document.querySelectorAll("#m-items .row").length, pick: !document.getElementById("pick").hidden, dlg: !document.getElementById("dlg").hidden, pw: document.getElementById("m-pw-on").checked, toast: document.getElementById("toast").textContent, wtitle: document.getElementById("w-title").textContent, pct: document.getElementById("w-pct").textContent })));
+  const purrPath = path.join(ROOT, (await text(p, "#d-path")).split(" › ").slice(1).join("/"));
+  ok(`${label}: named Backup.purr`, path.basename(purrPath) === "Backup.purr", purrPath);
+  const did = await text(p, "#d-notes");
+  ok(`${label}: done screen says what .purr did`, did.includes("repeats") && did.includes("photo"), did);
+  const pl = cli("list", purrPath);
+  ok(`${label}: purr lists, has repair data, found the twin photo`, pl.format === "Purr" && pl.purr.repair_data && pl.purr.stats.dup_bytes > 50000 && pl.purr.stats.jpeg_count === 2, pl.purr);
+  const out2 = fs.mkdtempSync(path.join(ROOT, "..", "chk-"));
+  const r2 = cli("extract", purrPath, out2);
+  ok(`${label}: purr unpacks byte-exact (photo)`, r2.ok && Buffer.compare(fs.readFileSync(path.join(out2, "Pictures/Trip/beach.jpg")), fs.readFileSync(path.join(ROOT, "Pictures/Trip/beach.jpg"))) === 0);
+  fs.rmSync(out2, { recursive: true, force: true });
+  await p.click("#d-again");
+  // damage it, then open it in the app: the app offers to repair, repairs, and the copy opens
+  const whole = fs.readFileSync(purrPath);
+  const hurt = Buffer.from(whole); hurt[5] ^= 0xff; hurt.fill(0, 3000, 3900); hurt[whole.length - 40000] ^= 1;
+  fs.writeFileSync(purrPath, hurt);
+  await openFromPicker(p, "Backup.purr");
+  ok(`${label}: damaged purr -> error with a repair offer`, await waitView(p, "error") && (await visible(p, "#e-repair")), await text(p, "#e-text"));
+  await p.click("#e-repair");
+  ok(`${label}: repair finishes`, await waitView(p, "done", 60000) && (await text(p, "#d-title")) === "Repaired!", await text(p, "#d-title"));
+  const fixedPath = path.join(ROOT, (await text(p, "#d-path")).split(" › ").slice(1).join("/"));
+  ok(`${label}: repaired copy is byte-identical to the undamaged archive`, path.basename(fixedPath) === "Backup (repaired).purr" && Buffer.compare(fs.readFileSync(fixedPath), whole) === 0, fixedPath);
+  ok(`${label}: the damaged file was left alone`, Buffer.compare(fs.readFileSync(purrPath), hurt) === 0);
+  await p.click("#d-show");
+  ok(`${label}: "Open it" opens the repaired archive`, await waitView(p, "open") && (await text(p, "#o-name")) === "Backup (repaired).purr" && (await text(p, "#o-summary")).includes("repair data"));
+  await p.click("#o-all");
+  ok(`${label}: repaired purr unzips`, await waitView(p, "done"));
+  const un = path.join(DL, (await text(p, "#d-path")).split(" › ").slice(2).join("/"));
+  ok(`${label}: and the photo inside is right`, Buffer.compare(fs.readFileSync(path.join(un, "Trip/sunset.jpg")), fs.readFileSync(path.join(ROOT, "Pictures/Trip/sunset.jpg"))) === 0, un);
+  fs.rmSync(un, { recursive: true, force: true }); fs.rmSync(purrPath); fs.rmSync(fixedPath);
+  await p.click("#d-again"); await p.click("#go-home");
+  // locked .purr: names hidden
+  await p.click("#home-make"); await wait(200);
+  await p.click("#m-add-files"); await wait(400);
+  await p.click("#pick-up"); await wait(300);
+  await checkRow(p, "#pick-list", "Documents"); await p.click("#pick-ok"); await wait(400);
+  await p.click('#m-format button[data-v="Purr"]');
+  await p.click("#m-pw-on"); await p.type("#m-pw", "hush"); await p.type("#m-pw2", "hush");
+  ok(`${label}: purr lock hint says names are hidden`, (await text(p, "#m-pw-hint")).includes("names are hidden"));
+  await p.click("#m-go");
+  ok(`${label}: locked purr made`, await waitView(p, "done", 60000));
+  const lockedPath = path.join(ROOT, (await text(p, "#d-path")).split(" › ").slice(1).join("/"));
+  ok(`${label}: locked purr hides names`, cli("list", lockedPath).code === "need_password" && !fs.readFileSync(lockedPath).includes("list-1"));
+  await p.click("#d-again"); await p.click("#go-home");
+  await openFromPicker(p, path.basename(lockedPath)); await wait(600);
+  ok(`${label}: locked purr asks for the password`, await visible(p, "#dlg"));
+  await p.type("#dlg-pw", "wrong"); await p.click("#dlg-ok"); await wait(900);
+  ok(`${label}: wrong purr password message`, (await text(p, "#dlg-err")).includes("not it"));
+  await p.type("#dlg-pw", "hush"); await p.keyboard.press("Enter");
+  ok(`${label}: right password opens the purr`, await waitView(p, "open") && (await p.$$eval("#o-list .row", r => r.length)) === 1);
+  fs.rmSync(lockedPath);
 
   // 9. not an archive
   await p.click("#go-home");

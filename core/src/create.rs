@@ -15,6 +15,8 @@ use zip::{AesMode, CompressionMethod, ZipWriter};
 pub enum CreateFormat {
     Zip,
     SevenZ,
+    /// Purrzip's own format: stores repeats once, shrinks photos, optional repair data.
+    Purr,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -31,9 +33,15 @@ pub struct CreateOptions {
     pub format: CreateFormat,
     pub level: Level,
     pub password: Option<String>,
-    /// 7z only: also hide the file names behind the password.
+    /// 7z only: also hide the file names behind the password. (.purr always hides them.)
     #[serde(default)]
     pub hide_names: bool,
+    /// .purr only: add repair data (about 3% bigger) so a damaged archive can fix itself.
+    #[serde(default)]
+    pub repair: bool,
+    /// .purr only: use less memory (phones).
+    #[serde(default)]
+    pub low_memory: bool,
 }
 
 #[derive(Debug, Default, Clone, serde::Serialize)]
@@ -43,13 +51,16 @@ pub struct CreateReport {
     pub bytes_in: u64,
     pub bytes_out: u64,
     pub skipped: Vec<(String, String)>,
+    /// .purr only: what the repeat finder and the photo shrinker saved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purr: Option<crate::purr::Stats>,
 }
 
-struct Item {
-    src: PathBuf,
-    name: String,
-    is_dir: bool,
-    size: u64,
+pub(crate) struct Item {
+    pub(crate) src: PathBuf,
+    pub(crate) name: String,
+    pub(crate) is_dir: bool,
+    pub(crate) size: u64,
 }
 
 /// Files that are already squeezed: storing them is as small and much faster.
@@ -67,7 +78,7 @@ fn component_name(p: &Path) -> String {
     p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "files".into())
 }
 
-fn gather(sources: &[PathBuf], skipped: &mut Vec<(String, String)>) -> Result<Vec<Item>> {
+pub(crate) fn gather(sources: &[PathBuf], skipped: &mut Vec<(String, String)>) -> Result<Vec<Item>> {
     let mut items = Vec::new();
     let mut tops = HashSet::new();
     for src in sources {
@@ -154,6 +165,10 @@ pub fn create(sources: &[PathBuf], out: &Path, opts: &CreateOptions, progress: &
     let result = match opts.format {
         CreateFormat::Zip => write_zip(&items, &part, opts, total, progress),
         CreateFormat::SevenZ => write_7z(&items, &part, opts, total, progress),
+        CreateFormat::Purr => {
+            let po = crate::purr::PurrOptions { level: opts.level, password: opts.password.clone(), repair: opts.repair, low_memory: opts.low_memory };
+            crate::purr::write_purr(&items, &part, &po, progress, &mut report.skipped).map(|stats| report.purr = Some(stats))
+        }
     };
     if let Err(e) = result {
         let _ = fs::remove_file(&part);

@@ -16,10 +16,20 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct Fail {
     pub code: String,
     pub message: String,
+    /// True for a damaged .purr that carries repair data (the app offers "Try to repair").
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub repairable: bool,
 }
 impl Fail {
     fn new(code: &str, message: impl Into<String>) -> Self {
-        Fail { code: code.into(), message: message.into() }
+        Fail { code: code.into(), message: message.into(), repairable: false }
+    }
+    /// Mark a "damaged" failure as repairable when the file is a .purr with repair data.
+    fn for_archive(mut self, path: &Path) -> Self {
+        if self.code == "damaged" && matches!(core::detect(path), Ok(core::Format::Purr)) && core::purr::repairable(path) {
+            self.repairable = true;
+        }
+        self
     }
 }
 impl From<core::Error> for Fail {
@@ -30,6 +40,14 @@ impl From<core::Error> for Fail {
 impl From<std::io::Error> for Fail {
     fn from(e: std::io::Error) -> Self {
         Fail::new("io", e.to_string())
+    }
+}
+
+/// Run a job body; a crash inside becomes an ordinary failure instead of a job that never ends.
+fn guarded(f: impl FnOnce() -> Result<Value, Fail>) -> Result<Value, Fail> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(r) => r,
+        Err(_) => Err(Fail::new("other", "Something went wrong inside Purrzip. Nothing of yours was changed.")),
     }
 }
 
@@ -83,7 +101,7 @@ fn arg_opt(a: &Value, k: &str) -> Option<String> {
 pub fn archive_stem(path: &Path) -> String {
     let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "archive".into());
     let lower = name.to_lowercase();
-    for ext in [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".tbz2", ".txz", ".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".zst", ".iso", ".cab", ".jar", ".apk"] {
+    for ext in [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".tbz2", ".txz", ".zip", ".7z", ".purr", ".rar", ".tar", ".gz", ".bz2", ".xz", ".zst", ".iso", ".cab", ".jar", ".apk"] {
         if lower.ends_with(ext) && name.len() > ext.len() {
             let mut stem = name[..name.len() - ext.len()].to_string();
             let l = stem.to_lowercase();
@@ -135,7 +153,10 @@ impl Service {
     pub fn call(self: &Arc<Self>, cmd: &str, a: &Value) -> Result<Value, Fail> {
         match cmd {
             "info" => Ok(self.info()),
-            "list" => self.list(a),
+            "list" => self.list(a).map_err(|f| match a.get("path").and_then(|v| v.as_str()) {
+                Some(p) => f.for_archive(Path::new(p)),
+                None => f,
+            }),
             "extract" => self.extract(a),
             "create" => self.create(a),
             "job" => self.job(a),
@@ -150,7 +171,11 @@ impl Service {
                 self.jobs.lock().unwrap().remove(&id);
                 Ok(json!({"ok": true}))
             }
-            "preview" => self.preview(a),
+            "preview" => self.preview(a).map_err(|f| match a.get("path").and_then(|v| v.as_str()) {
+                Some(p) => f.for_archive(Path::new(p)),
+                None => f,
+            }),
+            "repair" => self.repair(a),
             "browse" => self.browse(a),
             "places" => Ok(self.places()),
             "stat" => {
@@ -256,7 +281,7 @@ impl Service {
         }
         let (id, job) = self.new_job("extract");
         std::thread::spawn(move || {
-            let r = extract_job(&path, &dest_parent, pw.as_deref(), only.as_deref(), &job);
+            let r = guarded(|| extract_job(&path, &dest_parent, pw.as_deref(), only.as_deref(), &job)).map_err(|f| f.for_archive(&path));
             Service::finish(&job, r);
         });
         Ok(json!({"id": id}))
@@ -271,8 +296,11 @@ impl Service {
         if sources.is_empty() {
             return Err(Fail::new("bad_request", "Pick at least one file or folder."));
         }
-        let opts: CreateOptions = serde_json::from_value(a.get("options").cloned().unwrap_or(Value::Null))
+        let mut opts: CreateOptions = serde_json::from_value(a.get("options").cloned().unwrap_or(Value::Null))
             .map_err(|e| Fail::new("bad_request", e.to_string()))?;
+        if self.platform == "android" {
+            opts.low_memory = true; // phones: smaller packs and dictionaries
+        }
         let out_dir = PathBuf::from(arg_str(a, "out_dir")?);
         if !out_dir.is_dir() {
             return Err(Fail::new("bad_dest", "That folder doesn't exist."));
@@ -282,6 +310,7 @@ impl Service {
         let ext = match opts.format {
             core::CreateFormat::Zip => ".zip",
             core::CreateFormat::SevenZ => ".7z",
+            core::CreateFormat::Purr => ".purr",
         };
         if name.to_lowercase().ends_with(ext) {
             name.truncate(name.len() - ext.len());
@@ -292,7 +321,30 @@ impl Service {
         let out = unique_path(&out_dir, &name, ext);
         let (id, job) = self.new_job("create");
         std::thread::spawn(move || {
-            let r = core::create(&sources, &out, &opts, &*job).map(|rep| json!({"path": out, "report": rep})).map_err(Fail::from);
+            let r = guarded(|| core::create(&sources, &out, &opts, &*job).map(|rep| json!({"path": out, "report": rep})).map_err(Fail::from));
+            if r.is_err() {
+                let _ = std::fs::remove_file(format!("{}.part", out.display()));
+            }
+            Service::finish(&job, r);
+        });
+        Ok(json!({"id": id}))
+    }
+
+    /// Make a repaired copy of a damaged .purr next to it ("name (repaired).purr").
+    fn repair(self: &Arc<Self>, a: &Value) -> Result<Value, Fail> {
+        let path = PathBuf::from(arg_str(a, "path")?);
+        let dir = path.parent().map(|p| p.to_path_buf()).ok_or_else(|| Fail::new("bad_request", "bad path"))?;
+        let out = unique_path(&dir, &format!("{} (repaired)", archive_stem(&path)), ".purr");
+        let (id, job) = self.new_job("repair");
+        std::thread::spawn(move || {
+            let r = guarded(|| match core::purr::repair(&path, &out, &*job) {
+                Ok(rep) if rep.clean => Ok(json!({"path": path, "report": rep})),
+                Ok(rep) => Ok(json!({"path": out, "report": rep})),
+                Err(e) => Err(Fail::from(e)),
+            });
+            if r.is_err() {
+                let _ = std::fs::remove_file(&out);
+            }
             Service::finish(&job, r);
         });
         Ok(json!({"id": id}))

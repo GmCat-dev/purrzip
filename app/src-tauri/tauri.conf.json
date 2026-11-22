@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Purrzip",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "io.gmcat.purrzip",
   "build": {
     "frontendDist": "../ui"
@@ -73,6 +73,14 @@
         "name": "7z archive",
         "role": "Editor",
         "mimeType": "application/x-7z-compressed"
+      },
+      {
+        "ext": [
+          "purr"
+        ],
+        "name": "Purrzip archive",
+        "role": "Editor",
+        "mimeType": "application/x-purr"
       },
       {
         "ext": [

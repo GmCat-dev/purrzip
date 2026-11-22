@@ -1,6 +1,6 @@
 [package]
 name = "purrzip-app"
-version = "0.1.0"
+version = "0.2.0"
 description = "Purrzip by GmCat: open and make archives"
 authors = ["GmCat"]
 license = "AGPL-3.0-or-later"

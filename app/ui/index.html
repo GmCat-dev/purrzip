@@ -32,11 +32,11 @@
       </button>
       <button class="choice" id="home-make" type="button">
         <img src="img/pack.png" alt="">
-        <span><b>Make an archive</b><small>Squeeze files and folders into a .zip or .7z</small></span>
+        <span><b>Make an archive</b><small>Squeeze files and folders into a .zip, .7z or .purr</small></span>
       </button>
     </div>
     <p class="drop-hint desktop-only">…or drop files on this window.</p>
-    <p class="formats">Opens <span>ZIP</span><span>7z</span><span>RAR</span><span>TAR</span><span>GZ</span><span>BZ2</span><span>XZ</span><span>ZST</span><span>ISO</span><span>CAB</span></p>
+    <p class="formats">Opens <span>ZIP</span><span>7z</span><span>RAR</span><span>TAR</span><span>GZ</span><span>BZ2</span><span>XZ</span><span>ZST</span><span>ISO</span><span>CAB</span><span>PURR</span></p>
   </section>
 
   <!-- OPEN: archive contents -->
@@ -81,10 +81,12 @@
     <div class="panel">
       <label class="field"><span>Name</span><input id="m-name" type="text" value="Archive" maxlength="120" autocomplete="off"></label>
       <div class="field"><span>Kind</span>
-        <div class="seg" role="radiogroup" aria-label="Kind of archive" id="m-format">
+        <div class="seg kinds" role="radiogroup" aria-label="Kind of archive" id="m-format">
           <button type="button" role="radio" data-v="Zip" aria-checked="true"><b>.zip</b><small>Opens everywhere</small></button>
           <button type="button" role="radio" data-v="SevenZ" aria-checked="false"><b>.7z</b><small>Smaller, needs 7-Zip or Purrzip</small></button>
+          <button type="button" role="radio" data-v="Purr" aria-checked="false"><b>.purr</b><small>Smallest, only Purrzip opens it</small></button>
         </div>
+        <small class="hint" id="m-kind-hint" hidden>.purr keeps repeated files only once and shrinks photos by about 20% without changing them. Great for backups. To send files to someone else, .zip is the safe choice.</small>
       </div>
       <div class="field"><span>Squeeze</span>
         <div class="seg three" role="radiogroup" aria-label="How hard to squeeze" id="m-level">
@@ -100,6 +102,10 @@
         <div class="pw-field"><input id="m-pw2" type="password" placeholder="Same password again" autocomplete="new-password" aria-label="Password again"></div>
         <label class="check" id="m-hide-row" hidden><input type="checkbox" id="m-hide" checked> <span>Hide the file names too</span></label>
         <small class="hint" id="m-pw-hint"></small>
+      </div>
+      <div id="m-repair-row" hidden>
+        <label class="check"><input type="checkbox" id="m-repair"> <span>Add repair data (+3% size)</span></label>
+        <small class="hint">If the archive gets damaged one day, Purrzip can use this to fix it.</small>
       </div>
     </div>
     <div class="dest-row">
@@ -141,7 +147,10 @@
     <img class="cat" src="img/oops.png" alt="GmCat looking sad">
     <h1 id="e-title">Something went wrong</h1>
     <p class="lead" id="e-text"></p>
-    <div class="actions"><button class="btn primary" id="e-back" type="button">Back</button></div>
+    <div class="actions">
+      <button class="btn" id="e-back" type="button">Back</button>
+      <button class="btn primary" id="e-repair" type="button" hidden>Try to repair</button>
+    </div>
   </section>
 </main>
 

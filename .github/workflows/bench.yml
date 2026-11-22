@@ -1,0 +1,78 @@
+# Compares .purr with real 7-Zip (and xz) on folders gathered on GitHub's machine.
+# Run by hand: Actions -> Benchmark against 7-Zip -> Run workflow. Results are in the job log
+# and in the "bench" artifact.
+name: Benchmark against 7-Zip
+on:
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y 7zip xz-utils python3-pil
+      - run: cargo build --release -p purrzip-core --bins
+      - name: Gather folders
+        run: |
+          set -u
+          mkdir -p corp/source corp/programs corp/photos corp/backup dl
+          # Source code: some of the crates this project depends on (about 120 MB).
+          n=0
+          for d in $(ls -d ~/.cargo/registry/src/*/* | sort | awk 'NR%3==1'); do
+            s=$(du -sk "$d" | cut -f1)
+            [ $((n + s)) -gt 120000 ] && break
+            cp -r "$d" corp/source/
+            n=$((n + s))
+          done
+          # Programs: the biggest tools installed on this machine (about 150 MB).
+          n=0
+          for f in $(ls -S /usr/bin); do
+            p="/usr/bin/$f"
+            if [ -f "$p" ] && [ ! -L "$p" ]; then
+              s=$(du -k "$p" | cut -f1)
+              [ $((n + s)) -gt 150000 ] && break
+              cp "$p" corp/programs/ && n=$((n + s))
+            fi
+          done
+          # Photos: public test photographs (skipped if the downloads fail).
+          for i in 01 03 05 08 13 15 19 20 23; do
+            curl -s -m 60 -A "purrzip-bench/0.2" -o "dl/kodim$i.png" "https://r0k.us/graphics/kodak/kodak/kodim$i.png" || true
+          done
+          python3 - <<'PY'
+          import glob, os
+          from PIL import Image
+          for p in sorted(glob.glob('dl/*.png')):
+              try:
+                  im = Image.open(p).convert('RGB')
+              except Exception:
+                  continue
+              n = os.path.basename(p)[:-4]
+              im.save(f'corp/photos/{n}-q92.jpg', quality=92)
+              im.save(f'corp/photos/{n}-q80-progressive.jpg', quality=80, progressive=True, optimize=True)
+          PY
+          for f in Fronalpstock_big.jpg Hopetoun_falls.jpg Cat_November_2010-1a.jpg Bachalpsee_reflection.jpg Sunflower_from_Silesia2.jpg; do
+            curl -s -L -m 120 -A "purrzip-bench/0.2" -o "corp/photos/$f" "https://commons.wikimedia.org/wiki/Special:FilePath/$f" || true
+            # keep only real JPEGs
+            if [ "$(head -c 2 "corp/photos/$f" | od -An -tx1 | tr -d ' \n')" != "ffd8" ]; then rm -f "corp/photos/$f"; fi
+          done
+          # A backup folder: the same project saved on two days, a few files changed in between.
+          cp -r corp/source corp/backup/monday
+          cp -r corp/source corp/backup/friday
+          find corp/backup/friday -name "*.rs" | head -200 | while read -r f; do echo "// edited on friday" >> "$f"; done
+          du -sh corp/*
+      - name: Benchmark
+        run: |
+          args=""
+          for c in photos source programs backup; do
+            if [ -n "$(ls -A corp/$c 2>/dev/null)" ]; then args="$args $c=corp/$c"; fi
+          done
+          7zz | head -2
+          python3 -I tests/bench.py target/release/purrzip-cli work $args | tee bench.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench
+          path: |
+            bench.txt
+            work/bench.json

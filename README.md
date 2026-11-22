@@ -8,6 +8,10 @@ your device: there is no server, Purrzip does everything on the device itself.
   files, `.iso` (ISO 9660 + Joliet) and `.cab`.
 - **Makes:** `.zip` and `.7z`, with an optional strong AES-256 password (and hidden file names for `.7z`). Photos,
   videos and other already-squeezed files are stored as they are, which is as small and much faster.
+- **Its own format, `.purr`**, for when small matters more than "opens everywhere": repeated files and repeated
+  pieces are stored once however far apart they are, JPEG photos shrink by about 20% and come back byte for byte,
+  a password hides the names too, and optional repair data lets a damaged archive fix itself.
+  The format is documented in [docs/PURR-FORMAT.md](docs/PURR-FORMAT.md).
 - **Look before you unzip:** browse folders inside an archive, search, preview pictures, text, video and sound,
   and unzip everything or just the files you tick.
 - **Safe with strange archives:** see [SECURITY.md](SECURITY.md). Nothing is ever written outside the folder you pick.
@@ -21,11 +25,12 @@ Purrzip can open RAR files but can't make them: the RAR format belongs to its au
 |---|---|
 | Opening every format, making .zip/.7z | [`core/src/`](core/src) (`lib.rs` is the overview, one `fmt_*.rs` per format, `create.rs`) |
 | The safety rules for writing files | [`core/src/safe.rs`](core/src/safe.rs) |
+| The .purr format: writer, reader, lock, repair data | [`core/src/purr/`](core/src/purr) (`mod.rs` is the overview), spec in [`docs/PURR-FORMAT.md`](docs/PURR-FORMAT.md) |
 | Commands the app screen uses (jobs, progress, Stop, previews) | [`service/src/lib.rs`](service/src/lib.rs) |
 | The app screen (HTML/CSS/JS, no build step) | [`app/ui/`](app/ui) |
 | App shell (Tauri) and Android glue | [`app/src-tauri/`](app/src-tauri), `app/src-tauri/gen/android/app/src/main/java/io/gmcat/purrzip/MainActivity.kt` |
 | Command-line version | `core/src/bin/purrzip-cli.rs` |
-| Tests | `tests/core_test.py` (formats, passwords, booby-trapped archives, round trips), `tests/ui_test.mjs` (the real screen against the real engine) |
+| Tests | `cargo test -p purrzip-core` (incl. archives made on Linux that every other system must unpack identically), `tests/core_test.py` (formats, passwords, booby-trapped archives, round trips), `tests/ui_test.mjs` (the real screen against the real engine), `tests/bench.py` (sizes and speeds against other tools) |
 
 ## Build it yourself
 
