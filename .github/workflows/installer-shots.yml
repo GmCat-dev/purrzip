@@ -1,0 +1,87 @@
+# Runs the Windows installer from a "Build Purrzip" run on a real Windows machine and takes screenshots of each
+# page, then of a .purr file in File Explorer (to check its icon). Started by hand with the build's run id.
+name: Windows installer screenshots
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run id of a finished 'Build Purrzip' run"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  shots:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: purrzip-windows-latest
+          path: build
+          run-id: ${{ github.event.inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Install while taking screenshots
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $shell = New-Object -ComObject WScript.Shell
+          New-Item -ItemType Directory -Force -Path shots | Out-Null
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("shots\$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
+            $g.Dispose(); $bmp.Dispose()
+          }
+          $setup = Get-ChildItem -Recurse build -Filter *-setup.exe | Select-Object -First 1
+          Write-Host "installer: $($setup.FullName)"
+          Shot "0-desktop"
+          $p = Start-Process -FilePath $setup.FullName -PassThru
+          for ($i = 1; $i -le 7; $i++) {
+            Start-Sleep -Seconds 6
+            $null = $shell.AppActivate($p.Id)
+            Start-Sleep -Milliseconds 500
+            Shot "$i-page"
+            if ($p.HasExited) { break }
+            $shell.SendKeys("{ENTER}")
+          }
+          Start-Sleep -Seconds 4
+          Get-Process | Where-Object { $_.ProcessName -like "purrzip*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Write-Host "--- registry"
+          reg query "HKCU\Software\Classes\.purr" /s
+          reg query "HKCU\Software\Classes\Purrzip archive" /s
+          Write-Host "--- installed files"
+          Get-ChildItem "$env:LOCALAPPDATA\Purrzip" | Format-Table Name, Length
+      - name: A .purr file in File Explorer
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("shots\$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
+            $g.Dispose(); $bmp.Dispose()
+          }
+          $d = "C:\Purr files"
+          New-Item -ItemType Directory -Force -Path $d | Out-Null
+          Set-Content -Path "$d\Holiday photos.purr" -Value "test"
+          Set-Content -Path "$d\Backup.zip" -Value "test"
+          # large icons in this folder
+          Start-Process explorer.exe -ArgumentList "`"$d`""
+          Start-Sleep -Seconds 6
+          $shell = New-Object -ComObject WScript.Shell
+          $null = $shell.AppActivate("Purr files")
+          Start-Sleep -Milliseconds 500
+          $shell.SendKeys("^+2")
+          Start-Sleep -Seconds 3
+          Shot "8-explorer"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installer-shots
+          path: shots

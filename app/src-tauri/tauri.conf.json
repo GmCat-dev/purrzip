@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Purrzip",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "identifier": "io.gmcat.purrzip",
   "build": {
     "frontendDist": "../ui"
@@ -52,7 +52,7 @@
       "minSdkVersion": 26
     },
     "publisher": "GmCat",
-    "copyright": "\u00a9 2026 GmCat",
+    "copyright": "© 2026 GmCat",
     "category": "Utility",
     "shortDescription": "Open and make archives",
     "longDescription": "Purrzip by GmCat opens .zip, .7z, .rar, .tar, .gz and more, and makes .zip and .7z archives. Free, no ads, no account, no tracking.",
@@ -80,7 +80,15 @@
         ],
         "name": "Purrzip archive",
         "role": "Editor",
-        "mimeType": "application/x-purr"
+        "mimeType": "application/x-purr",
+        "description": "Purrzip archive",
+        "exportedType": {
+          "identifier": "io.gmcat.purr",
+          "conformsTo": [
+            "public.data",
+            "public.archive"
+          ]
+        }
       },
       {
         "ext": [

@@ -1,0 +1,21 @@
+{
+  "bundle": {
+    "linux": {
+      "deb": {
+        "depends": [],
+        "files": {
+          "/usr/share/mime/packages/io.gmcat.purrzip.xml": "../../art/linux/io.gmcat.purrzip.xml",
+          "/usr/share/icons/hicolor/16x16/mimetypes/application-x-purr.png": "../../art/purr-file/purr-16.png",
+          "/usr/share/icons/hicolor/32x32/mimetypes/application-x-purr.png": "../../art/purr-file/purr-32.png",
+          "/usr/share/icons/hicolor/48x48/mimetypes/application-x-purr.png": "../../art/purr-file/purr-48.png",
+          "/usr/share/icons/hicolor/64x64/mimetypes/application-x-purr.png": "../../art/purr-file/purr-64.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/application-x-purr.png": "../../art/purr-file/purr-128.png",
+          "/usr/share/icons/hicolor/256x256/mimetypes/application-x-purr.png": "../../art/purr-file/purr-256.png",
+          "/usr/share/icons/hicolor/512x512/mimetypes/application-x-purr.png": "../../art/purr-file/purr-512.png"
+        },
+        "postInstallScript": "../../art/linux/postinst.sh",
+        "postRemoveScript": "../../art/linux/postrm.sh"
+      }
+    }
+  }
+}

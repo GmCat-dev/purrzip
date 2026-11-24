@@ -1,0 +1,16 @@
+{
+  "bundle": {
+    "resources": {
+      "../../art/purr-file/purr.ico": "purr.ico"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "../../art/installer/installer.ico",
+        "sidebarImage": "../../art/installer/sidebar.bmp",
+        "headerImage": "../../art/installer/header.bmp",
+        "installerHooks": "windows/hooks.nsh"
+      }
+    }
+  }
+}

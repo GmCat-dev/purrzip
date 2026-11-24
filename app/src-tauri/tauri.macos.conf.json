@@ -1,0 +1,24 @@
+{
+  "bundle": {
+    "macOS": {
+      "files": {
+        "Resources/purr.icns": "../../art/purr-file/purr.icns"
+      },
+      "dmg": {
+        "background": "../../art/installer/dmg-background.png",
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 210
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 210
+        }
+      }
+    }
+  }
+}

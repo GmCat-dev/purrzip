@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Purrzip archive file type for Linux desktops (installed by the .deb). -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-purr">
+    <comment>Purrzip archive</comment>
+    <glob pattern="*.purr"/>
+    <magic priority="60">
+      <match type="string" offset="1" value="PURR"/>
+    </magic>
+    <icon name="application-x-purr"/>
+  </mime-type>
+</mime-info>

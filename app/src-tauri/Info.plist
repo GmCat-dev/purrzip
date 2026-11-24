@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Added to the generated Info.plist. Declares the .purr file type with its own icon (purr.icns in Resources). -->
+<plist version="1.0">
+<dict>
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key><string>io.gmcat.purr</string>
+      <key>UTTypeDescription</key><string>Purrzip archive</string>
+      <key>UTTypeConformsTo</key><array><string>public.data</string><string>public.archive</string></array>
+      <key>UTTypeIconFile</key><string>purr.icns</string>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><array><string>purr</string></array>
+        <key>public.mime-type</key><string>application/x-purr</string>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>
