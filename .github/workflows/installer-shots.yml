@@ -116,28 +116,32 @@ jobs:
           Run @('--test', "`"$m\Trip.purr`"") { $false } "12-test"
           Get-Process | Where-Object { $_.ProcessName -like "purrzip*" } | Stop-Process -Force -ErrorAction SilentlyContinue
           Get-ChildItem -Recurse $m | Format-Table FullName, Length
-          # the menu itself: select Trip.zip in Explorer, open the classic right-click menu, then the Purrzip submenu
-          Start-Process explorer.exe -ArgumentList "/select,`"$m\Trip.zip`""
-          Start-Sleep -Seconds 6
-          $shell = New-Object -ComObject WScript.Shell
-          $null = $shell.AppActivate("Menu test")
-          Start-Sleep -Milliseconds 700
-          $shell.SendKeys("+{F10}")
-          Start-Sleep -Seconds 3
-          Shot "13-menu"
-          $shell.SendKeys("p")
-          Start-Sleep -Milliseconds 800
-          $shell.SendKeys("{RIGHT}")
-          Start-Sleep -Seconds 2
-          Shot "14-menu-purrzip"
-          # What File Explorer itself offers on the right-click menu (top level) for an archive, a file, a folder
-          $sh = New-Object -ComObject Shell.Application
-          $ns = $sh.Namespace($m)
-          foreach ($n in @("Trip.zip", "Trip.purr", "todo.txt", "Trip")) {
-            $verbs = @($ns.ParseName($n).Verbs() | ForEach-Object { $_.Name.Replace("&", "") })
-            $count = @($verbs | Where-Object { $_ -eq "Purrzip" }).Count
-            Write-Host "menu $n : Purrzip entries = $count | $($verbs -join ' / ')"
+          # the menu itself, as File Explorer shows it: a folder with just one item, select it, open the menu
+          function MenuShot($folder, $item, $name) {
+            New-Item -ItemType Directory -Force -Path $folder | Out-Null
+            Copy-Item -Recurse $item $folder
+            Start-Process explorer.exe -ArgumentList "`"$folder`""
+            Start-Sleep -Seconds 6
+            $shell = New-Object -ComObject WScript.Shell
+            $null = $shell.AppActivate((Split-Path $folder -Leaf))
+            Start-Sleep -Milliseconds 800
+            $shell.SendKeys("{HOME}")
+            Start-Sleep -Milliseconds 500
+            $shell.SendKeys("+{F10}")
+            Start-Sleep -Seconds 3
+            Shot "$name-a"
+            $shell.SendKeys("p")
+            Start-Sleep -Milliseconds 800
+            $shell.SendKeys("{RIGHT}")
+            Start-Sleep -Seconds 2
+            Shot "$name-b"
+            $shell.SendKeys("{ESC}{ESC}{ESC}")
+            Start-Sleep -Milliseconds 500
+            $shell.SendKeys("%{F4}")
+            Start-Sleep -Seconds 1
           }
+          MenuShot "C:\Menu zip" "$m\Trip.zip" "13-menu-zip"
+          MenuShot "C:\Menu text" "$m	odo.txt" "14-menu-txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
