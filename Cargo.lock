@@ -3265,7 +3265,7 @@ dependencies = [
 
 [[package]]
 name = "purrzip-app"
-version = "0.2.4"
+version = "0.2.6"
 dependencies = [
  "purrzip-service",
  "serde",
@@ -3279,7 +3279,7 @@ dependencies = [
 
 [[package]]
 name = "purrzip-core"
-version = "0.2.4"
+version = "0.2.6"
 dependencies = [
  "aead-stream",
  "argon2",
@@ -3311,7 +3311,7 @@ dependencies = [
 
 [[package]]
 name = "purrzip-devserver"
-version = "0.2.4"
+version = "0.2.6"
 dependencies = [
  "purrzip-service",
  "serde_json",
@@ -3320,7 +3320,7 @@ dependencies = [
 
 [[package]]
 name = "purrzip-service"
-version = "0.2.4"
+version = "0.2.6"
 dependencies = [
  "dirs",
  "purrzip-core",

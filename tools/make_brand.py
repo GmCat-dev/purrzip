@@ -2,9 +2,9 @@
 """Purrzip brand art (picked 2026-11-24): app icon = zip-folder GmCat on the orange rounded square,
 .purr file icon, Windows installer pictures (orange side picture, header, installer icon), Mac disk-image background.
 
-The zip-folder GmCat is new art: the smiling GmCat read cell by cell from her cut-out (27 x 29 cells,
-original cells 13.36 x 12.74 px, kept slightly wide) with the mug replaced by a zipped folder (Pixel's layout,
-Claude's grid drawing, Pixel reviewed). Tiny sizes (16 and 32 px) are hand-drawn, not shrunk.
+The zip-folder GmCat is new art on GmCat's reference sprite (Final - grid redraws/gmcat.png, 32 px cells; square
+cells, official colours, 2-cell nose drawn half a cell over so it is exactly centred) with the mug replaced by a zipped
+folder (Pixel's layout, Claude's grid drawing). Tiny sizes (16 and 32 px) are hand-drawn, not shrunk.
 Drawings and grids live in art/zipcat/. Writes art/icon-1024.png (feed it to `npx tauri icon`), art/purr-file/*,
 art/installer/*. usage: python3 tools/make_brand.py
 """
@@ -14,8 +14,9 @@ from PIL import Image, ImageDraw, ImageFont
 PZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ART = os.path.join(PZ, "art")
 GRID = json.load(open(os.path.join(ART, "zipcat", "zipcat-grid.json")))
-PAL = {"#": (58, 44, 72), "W": (255, 255, 255), "s": (194, 196, 226), "p": (250, 190, 170),
-       "Y": (255, 200, 61), "y": (232, 165, 58), "Z": (58, 44, 72), "Q": (232, 234, 244),
+PAL = {"#": (0x40, 0x2E, 0x4D), "W": (255, 255, 255), "s": (0xBC, 0xC2, 0xE0), "p": (0xF8, 0xC0, 0xA8), "S": (0xF8, 0xC0, 0xA8),
+       "m": (176, 128, 136), "M": (208, 208, 232), "k": (224, 224, 236),
+       "Y": (255, 200, 61), "y": (232, 165, 58), "Z": (0x40, 0x2E, 0x4D), "Q": (232, 234, 244),
        "O": (240, 134, 56), "o": (226, 112, 44), "F": (255, 252, 246), "f": (234, 223, 202), "R": (232, 110, 42)}
 ORANGE_T, ORANGE_B = (246, 154, 74), (232, 110, 42)
 CREAM, INK, MUTED, OUTLINE = (255, 247, 232), (36, 33, 42), (107, 100, 117), (58, 44, 72)
@@ -30,7 +31,7 @@ APP16 = [
     "oO#W#####W#OOOOo",
     "oO#WWWWWWW#OOOOo",
     "oO#W#WWW#W#OOOOo",
-    "oO#WW###WW#OOOOo",
+    "oO#WWW#WWW#OOOOo",
     "oOO#WWWWW#OOOOOo",
     "oO#YY#Z#YY#O#OOo",
     "o#W#YYZYY#W##OOo",
@@ -71,15 +72,26 @@ def draw_map(rows, cell=1):
     return im
 
 
+NOSE_ROW = 10  # GmCat's 2-cell nose: drawn half a cell to the right so it is exactly centred (art.gmcat.io/gmcat/)
+
+
 def cat(height):
-    """the zip-folder GmCat drawn straight from her grid, whole-pixel cells, original wide cell shape"""
-    ch = max(1, height // len(GRID)); cw = max(1, round(ch * 13.36 / 12.74))
+    """the zip-folder GmCat drawn straight from her reference grid (square cells, whole pixels, centred nose)"""
+    ch = cw = max(1, height // len(GRID))
     h, w = len(GRID), len(GRID[0])
     im = Image.new("RGBA", (w * cw, h * ch), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
-    for r, row in enumerate(GRID):
-        for c, k in enumerate(row):
+    row = GRID[NOSE_ROW]
+    inner = [c for c in range(row.index("#") + 1, row.rindex("#")) if row[c] == "#"]
+    nose = inner if len(inner) == 2 and inner[1] == inner[0] + 1 else []
+    for r, line in enumerate(GRID):
+        for c, k in enumerate(line):
+            if r == NOSE_ROW and c in nose:
+                k = "W"
             if k in PAL:
                 d.rectangle([c * cw, r * ch, (c + 1) * cw - 1, (r + 1) * ch - 1], fill=PAL[k] + (255,))
+    if nose:
+        x0 = nose[0] * cw + cw // 2
+        d.rectangle([x0, NOSE_ROW * ch, x0 + 2 * cw - 1, (NOSE_ROW + 1) * ch - 1], fill=PAL["#"] + (255,))
     return im
 
 

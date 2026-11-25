@@ -1,0 +1,81 @@
+{
+"grid": [
+"...#.........##........",
+"..#W#.......#Ws#.......",
+".#sSW#######WSs#.......",
+".#sSsWWWWWWWsSs#.......",
+".#sWWWWWWWWWWWs#.......",
+".#WWWWWWWWWWWWW#.......",
+".#WWWWWWWWWWWWW#.......",
+"#WWWWWWWWWWWWWWW#......",
+"#WWW#WWWWWWW#WWW#......",
+"#WWW#WWWWWWW#WWW#......",
+"#WWWWWW##WWWWWWW#......",
+"#sWWWWWWWWWWWWWs#......",
+"#ssWWWWWWWWWWWss#......",
+".#sssWWWWWWWsss#.......",
+"..##sssssssss##........",
+"..#sssWWWWWsss#........",
+"..#WWW#####WWW#........",
+".#WWW#ppppm#WWW#.......",
+".#WW##Mkkks##WW#..##...",
+".#sWWWskkksWWWs#.#WW#..",
+".#sWW#skkks#WWs#.#WM#..",
+".#s###skkks###s#.#WM#..",
+".#ssss#####ssss#.#Ws#..",
+".#WWWWsssssWWWW#.#Ws#..",
+".#WWWWWWWWWWWWW#.#Ws#..",
+".#sWWWWWWWWWWWs##Ws#...",
+".#sWWsssssssWWs#sss#...",
+"..#WWW#####WWW#s###....",
+"KK###############KKKK.K",
+".KKKKKKKKKKKKKKKK......"
+],
+"pal": {
+"#": [
+56,
+40,
+72
+],
+"W": [
+248,
+248,
+248
+],
+"s": [
+188,
+194,
+224
+],
+"S": [
+248,
+192,
+168
+],
+"p": [
+232,
+168,
+144
+],
+"m": [
+176,
+128,
+136
+],
+"M": [
+208,
+208,
+232
+],
+"k": [
+224,
+224,
+236
+],
+"K": [
+168,
+168,
+206
+]
+}
+}
