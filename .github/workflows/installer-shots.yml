@@ -116,32 +116,39 @@ jobs:
           Run @('--test', "`"$m\Trip.purr`"") { $false } "12-test"
           Get-Process | Where-Object { $_.ProcessName -like "purrzip*" } | Stop-Process -Force -ErrorAction SilentlyContinue
           Get-ChildItem -Recurse $m | Format-Table FullName, Length
-          # the menu itself, as File Explorer shows it: a folder with just one item, select it, open the menu
-          function MenuShot($folder, $item, $name) {
+          # the menu itself, as File Explorer shows it: find the file with UI Automation, Shift + right-click it
+          # (Shift shows the full menu straight away on Windows 11), then point at "Purrzip"
+          Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+          Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class Mouse { [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e); [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, uint f, IntPtr e); public static void ShiftRightClick(int x, int y) { SetCursorPos(x, y); keybd_event(0x10, 0, 0, IntPtr.Zero); mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); mouse_event(0x0010, 0, 0, 0, IntPtr.Zero); keybd_event(0x10, 0, 2, IntPtr.Zero); } public static void Move(int x, int y) { SetCursorPos(x, y); } }'
+          $A = [System.Windows.Automation.AutomationElement]
+          $T = [System.Windows.Automation.TreeScope]
+          function Find($parent, $name) {
+            $c = New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, $name)
+            for ($i = 0; $i -lt 20; $i++) { $e = $parent.FindFirst($T::Descendants, $c); if ($e) { return $e }; Start-Sleep -Milliseconds 500 }
+            return $null
+          }
+          function Center($e) { $r = $e.Current.BoundingRectangle; return @([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) }
+          function MenuShot($folder, $item, $label, $name) {
             New-Item -ItemType Directory -Force -Path $folder | Out-Null
             Copy-Item -Recurse $item $folder
             Start-Process explorer.exe -ArgumentList "`"$folder`""
             Start-Sleep -Seconds 6
-            $shell = New-Object -ComObject WScript.Shell
-            $null = $shell.AppActivate((Split-Path $folder -Leaf))
-            Start-Sleep -Milliseconds 800
-            $shell.SendKeys("{HOME}")
-            Start-Sleep -Milliseconds 500
-            $shell.SendKeys("+{F10}")
+            $win = Find $A::RootElement (Split-Path $folder -Leaf)
+            if (-not $win) { Write-Host "no window for $folder"; return }
+            $it = Find $win $label
+            if (-not $it) { Write-Host "no item $label"; return }
+            $p = Center $it
+            [Mouse]::ShiftRightClick($p[0], $p[1])
             Start-Sleep -Seconds 3
             Shot "$name-a"
-            $shell.SendKeys("p")
-            Start-Sleep -Milliseconds 800
-            $shell.SendKeys("{RIGHT}")
-            Start-Sleep -Seconds 2
+            $pz = Find $A::RootElement "Purrzip"
+            if ($pz) { $q = Center $pz; [Mouse]::Move($q[0], $q[1]); Start-Sleep -Seconds 2; Write-Host "menu for $label has a Purrzip entry" } else { Write-Host "no Purrzip entry in the menu for $label" }
             Shot "$name-b"
-            $shell.SendKeys("{ESC}{ESC}{ESC}")
-            Start-Sleep -Milliseconds 500
-            $shell.SendKeys("%{F4}")
+            [System.Windows.Forms.SendKeys]::SendWait("{ESC}{ESC}{ESC}")
             Start-Sleep -Seconds 1
           }
-          MenuShot "C:\Menu zip" "$m\Trip.zip" "13-menu-zip"
-          MenuShot "C:\Menu text" "$m	odo.txt" "14-menu-txt"
+          MenuShot "C:\Menu zip" (Join-Path $m "Trip.zip") "Trip" "13-menu-zip"
+          MenuShot "C:\Menu text" (Join-Path $m "todo.txt") "todo" "14-menu-txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
