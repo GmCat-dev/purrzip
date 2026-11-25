@@ -128,7 +128,7 @@ jobs:
             return $null
           }
           function Center($e) { $r = $e.Current.BoundingRectangle; return @([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) }
-          function MenuShot($folder, $item, $label, $name) {
+          function MenuShot($folder, $item, $label, $name, $row) {
             New-Item -ItemType Directory -Force -Path $folder | Out-Null
             Copy-Item -Recurse $item $folder
             Start-Process explorer.exe -ArgumentList "`"$folder`""
@@ -141,14 +141,19 @@ jobs:
             [Mouse]::ShiftRightClick($p[0], $p[1])
             Start-Sleep -Seconds 3
             Shot "$name-a"
-            $pz = Find $A::RootElement "Purrzip"
-            if ($pz) { $q = Center $pz; [Mouse]::Move($q[0], $q[1]); Start-Sleep -Seconds 2; Write-Host "menu for $label has a Purrzip entry" } else { Write-Host "no Purrzip entry in the menu for $label" }
+            # the open menu is a "#32768" window; for an archive "Purrzip" is the second line (under "Open")
+            $mc = New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, "#32768")
+            $menu = $A::RootElement.FindFirst($T::Children, $mc)
+            if ($menu -and $row -gt 0) {
+              $r = $menu.Current.BoundingRectangle
+              [Mouse]::Move([int]($r.X + 60), [int]($r.Y + 14 + 24 * ($row - 1) + 10)); Start-Sleep -Seconds 2
+            } else { Write-Host "menu window not found for $label" }
             Shot "$name-b"
             [System.Windows.Forms.SendKeys]::SendWait("{ESC}{ESC}{ESC}")
             Start-Sleep -Seconds 1
           }
-          MenuShot "C:\Menu zip" (Join-Path $m "Trip.zip") "Trip" "13-menu-zip"
-          MenuShot "C:\Menu text" (Join-Path $m "todo.txt") "todo" "14-menu-txt"
+          MenuShot "C:\Menu zip" (Join-Path $m "Trip.zip") "Trip" "13-menu-zip" 2
+          MenuShot "C:\Menu text" (Join-Path $m "todo.txt") "todo" "14-menu-txt" 5
       - uses: actions/upload-artifact@v4
         if: always()
         with:
