@@ -653,6 +653,13 @@
     await addItems(paths);
     show("make");
   }
+  // Links to web pages (About: Source code) open in the browser
+  document.addEventListener("click", async function (ev) {
+    var a = ev.target.closest && ev.target.closest('a[target="_blank"]');
+    if (!a || !PZ.inApp) return;
+    ev.preventDefault();
+    if (!(await PZ.openUrl(a.href))) toast("Couldn't open the browser. The address is " + a.href);
+  });
   PZ.onDrop(handlePaths);
   PZ.onOpenRequest(handlePaths);
 

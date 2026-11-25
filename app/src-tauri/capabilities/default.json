@@ -2,10 +2,26 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "What the Purrzip screen may do",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "dialog:allow-open",
-    "opener:allow-reveal-item-in-dir"
+    "opener:allow-reveal-item-in-dir",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://github.com/GmCat-dev/*"
+        },
+        {
+          "url": "https://purr.gmcat.io/*"
+        },
+        {
+          "url": "https://gmcat.io/*"
+        }
+      ]
+    }
   ]
 }

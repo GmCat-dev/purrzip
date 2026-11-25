@@ -29,6 +29,11 @@
       if (inApp && T.opener) { try { await T.opener.revealItemInDir(p); return true; } catch (e) {} }
       return false;
     },
+    // Web links open in the normal browser (inside the app a plain link does nothing).
+    openUrl: async function (url) {
+      if (inApp && T.opener) { try { await T.opener.openUrl(url); return true; } catch (e) {} }
+      return false;
+    },
     onDrop: function (fn) {
       if (!inApp || !T.webview) return;
       try {
