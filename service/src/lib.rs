@@ -176,6 +176,7 @@ impl Service {
                 None => f,
             }),
             "repair" => self.repair(a),
+            "test" => self.test(a),
             "browse" => self.browse(a),
             "places" => Ok(self.places()),
             "stat" => {
@@ -274,6 +275,7 @@ impl Service {
         let path = PathBuf::from(arg_str(a, "path")?);
         let dest_parent = PathBuf::from(arg_str(a, "dest")?);
         let pw = arg_opt(a, "password");
+        let own_folder = a.get("own_folder").and_then(|v| v.as_bool()).unwrap_or(false);
         let only: Option<Vec<usize>> =
             a.get("only").and_then(|v| v.as_array()).map(|v| v.iter().filter_map(|x| x.as_u64().map(|n| n as usize)).collect());
         if !dest_parent.is_dir() {
@@ -281,7 +283,20 @@ impl Service {
         }
         let (id, job) = self.new_job("extract");
         std::thread::spawn(move || {
-            let r = guarded(|| extract_job(&path, &dest_parent, pw.as_deref(), only.as_deref(), &job)).map_err(|f| f.for_archive(&path));
+            let r = guarded(|| extract_job(&path, &dest_parent, pw.as_deref(), only.as_deref(), own_folder, &job)).map_err(|f| f.for_archive(&path));
+            Service::finish(&job, r);
+        });
+        Ok(json!({"id": id}))
+    }
+
+    /// Check every file in an archive (unpacks to a temporary folder, compares checks, cleans up).
+    fn test(self: &Arc<Self>, a: &Value) -> Result<Value, Fail> {
+        let path = PathBuf::from(arg_str(a, "path")?);
+        let pw = arg_opt(a, "password");
+        let (id, job) = self.new_job("test");
+        std::thread::spawn(move || {
+            let r = guarded(|| core::test(&path, pw.as_deref(), &*job).map(|rep| json!({"path": path, "report": rep})).map_err(Fail::from))
+                .map_err(|f| f.for_archive(&path));
             Service::finish(&job, r);
         });
         Ok(json!({"id": id}))
@@ -431,7 +446,8 @@ impl Utf8Cut for Result<&str, std::str::Utf8Error> {
     }
 }
 
-fn extract_job(path: &Path, dest_parent: &Path, pw: Option<&str>, only: Option<&[usize]>, job: &Job) -> Result<Value, Fail> {
+/// `own_folder`: always unpack into a new folder named after the archive (right-click \"Extract to new folder\").
+fn extract_job(path: &Path, dest_parent: &Path, pw: Option<&str>, only: Option<&[usize]>, own_folder: bool, job: &Job) -> Result<Value, Fail> {
     let listing = core::list(path, pw)?;
     let wanted: Vec<&core::Entry> = match only {
         None => listing.entries.iter().collect(),
@@ -444,7 +460,7 @@ fn extract_job(path: &Path, dest_parent: &Path, pw: Option<&str>, only: Option<&
         .filter(|e| !e.special)
         .map(|e| e.path.split('/').find(|p| !p.is_empty() && *p != ".").unwrap_or("").to_string())
         .collect();
-    if tops.len() == 1 && only.is_none() {
+    if tops.len() == 1 && only.is_none() && !own_folder {
         let tmp = unique_path(dest_parent, &format!(".purrzip-{}", stem), "");
         std::fs::create_dir(&tmp)?;
         let report = match core::extract_listed(path, &listing, &tmp, pw, None, job) {

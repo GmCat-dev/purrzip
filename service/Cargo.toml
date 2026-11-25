@@ -1,10 +1,10 @@
 [package]
 name = "purrzip-service"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 
 [dependencies]
 dirs = "7.0.0"
-purrzip-core = { version = "0.2.3", path = "../core" }
+purrzip-core = { version = "0.2.4", path = "../core" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

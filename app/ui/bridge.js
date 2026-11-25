@@ -45,6 +45,10 @@
         });
       } catch (e) {}
     },
+    // Right-click menu and second launches: {mode, paths}
+    onLaunch: function (fn) {
+      if (inApp && T.event) T.event.listen("pz-launch", function (ev) { if (ev.payload) fn(ev.payload); });
+    },
     onOpenRequest: function (fn) {
       if (inApp && T.event) T.event.listen("pz-open", function (ev) { if (ev.payload && ev.payload.length) fn(ev.payload); });
       window.pzOpenPaths = fn; // Android hands files over through this

@@ -339,7 +339,7 @@
     if (!O.dest) { var d = await chooseFolder(null, "Unzip into which folder?"); if (!d) return; O.dest = d; $("o-dest").textContent = nicePath(d); }
     if (!(await ensurePassword())) return;
     var r;
-    try { r = await PZ.call("extract", { path: O.path, dest: O.dest, password: O.password, only: only }); }
+    try { r = await PZ.call("extract", { path: O.path, dest: O.dest, password: O.password, only: only, own_folder: !!O.ownFolder }); }
     catch (e) { return fail("Couldn't start", e); }
     runJob(r.id, "extract", { only: only });
   }
@@ -475,7 +475,7 @@
   // ---------- jobs ----------
   function runJob(id, kind, extra) {
     S.job = { id: id, kind: kind, extra: extra, started: Date.now() };
-    $("w-title").textContent = kind === "create" ? "Packing…" : kind === "repair" ? "Repairing…" : "Unzipping…";
+    $("w-title").textContent = kind === "create" ? "Packing…" : kind === "repair" ? "Repairing…" : kind === "test" ? "Checking every file…" : "Unzipping…";
     $("w-pct").textContent = "0%"; $("w-bar").firstElementChild.style.width = "0";
     $("w-file").textContent = " "; $("w-bytes").textContent = " ";
     $("w-stop").disabled = false; $("w-stop").textContent = "Stop";
@@ -499,6 +499,7 @@
     if (j.status === "done") return done(job, j.result);
     if (j.status === "cancelled") {
       toast("Stopped. Nothing half-done was left behind.");
+      S.launchQueue = [];
       return show(job.kind === "create" ? "make" : job.kind === "repair" || !S.open ? "home" : "open");
     }
     var err = j.error || {};
@@ -510,6 +511,16 @@
       return startExtract(job.extra.only);
     }
     if (job.kind === "repair") return fail("Couldn't repair it", err);
+    S.launchQueue = [];
+    if (job.kind === "test") {
+      if (err.code === "wrong_password" || err.code === "need_password") {
+        var pw2 = await askPassword(S.open.listing.name, err.code === "wrong_password" ? "That's not it. Try again?" : null);
+        if (pw2 === null) return show("open");
+        S.open.password = pw2;
+        return startTest();
+      }
+      return fail("This archive has a problem", err, S.open ? S.open.path : null);
+    }
     fail(job.kind === "create" ? "Couldn't make the archive" : "Couldn't unzip it", err, job.kind === "extract" && S.open ? S.open.path : null);
   }
   $("w-stop").onclick = function () {
@@ -539,6 +550,12 @@
           var ul2 = el("ul"); renamed.slice(0, 50).forEach(function (s) { ul2.appendChild(el("li", null, s[0] + " → " + s[1])); }); notes.appendChild(ul2);
         }
       }
+    } else if (job.kind === "test") {
+      var tr = res.report;
+      $("d-cat").src = "img/done.png";
+      $("d-title").textContent = "All good!";
+      $("d-text").textContent = "Every file checked: " + plural(tr.files, "file") + " · " + size(tr.bytes) + ". Nothing is damaged.";
+      $("d-path").textContent = nicePath(res.path);
     } else if (job.kind === "repair") {
       var rr = res.report;
       $("d-cat").src = "img/done.png";
@@ -575,12 +592,14 @@
       $("m-repair").checked = false;
       $("m-pw-on").checked = false; $("m-pw-box").hidden = true; $("m-pw").value = ""; $("m-pw2").value = "";
     }
-    $("d-show").textContent = job.kind === "repair" ? "Open it" : "Show it";
+    $("d-show").textContent = job.kind === "repair" || job.kind === "test" ? "Open it" : "Show it";
     // Android: Purrzip writes files directly (much faster), so it tells the phone's media library what is new.
     var A = window.PurrzipAndroid;
     if (A && A.scan) { try { A.scan(String(job.kind === "extract" ? res.folder : res.path)); } catch (e) {} }
     var c = $("d-cat"); c.classList.remove("pop"); void c.offsetWidth; c.classList.add("pop");
     show("done");
+    // several archives picked in the right-click menu: on to the next one
+    if (S.launchQueue && S.launchQueue.length) { var nx = S.launchQueue.shift(); setTimeout(function () { launchOne(nx.mode, nx.path); }, 700); }
   }
   $("e-repair").onclick = async function () {
     var path = S.repairPath; if (!path) return;
@@ -592,7 +611,7 @@
   };
   $("d-show").onclick = async function () {
     var r = S.lastResult; if (!r) return;
-    if (r.kind === "repair") return openArchive(r.res.path);
+    if (r.kind === "repair" || r.kind === "test") return openArchive(r.res.path);
     var p = r.kind === "extract" ? r.res.folder : r.res.path;
     if (await PZ.reveal(p)) return;
     var folder = r.kind === "extract" && !r.res.single ? p : p.slice(0, Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")));
@@ -660,6 +679,65 @@
     ev.preventDefault();
     if (!(await PZ.openUrl(a.href))) toast("Couldn't open the browser. The address is " + a.href);
   });
+  // ---------- right-click menu (Windows): Extract here / to new folder / files…, Test, Add to … ----------
+  function parentOf(p) { var i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")); return i > 0 ? p.slice(0, i) : p; }
+  function stemOf(n) { return n.replace(/\.(tar\.(gz|bz2|xz|zst)|[^.]+)$/i, "") || n; }
+  async function startTest() {
+    var O = S.open;
+    if (!(await ensurePassword())) return;
+    var r;
+    try { r = await PZ.call("test", { path: O.path, password: O.password }); }
+    catch (e) { return fail("Couldn't start", e); }
+    runJob(r.id, "test", {});
+  }
+  async function launchOne(mode, path) {
+    await openArchive(path);
+    if (!S.open || S.open.path !== path) { S.launchQueue = []; return; } // couldn't open, or the password was cancelled
+    if (mode === "test") return startTest();
+    if (mode === "extract-ask") {
+      var d = await chooseFolder(S.open.dest, "Unzip into which folder?");
+      if (!d) { S.launchQueue = []; return; }
+      S.open.dest = d; $("o-dest").textContent = nicePath(d);
+      return startExtract(null);
+    }
+    S.open.dest = S.open.listing.folder || parentOf(path);
+    S.open.ownFolder = mode === "extract-new";
+    $("o-dest").textContent = nicePath(S.open.dest);
+    startExtract(null);
+  }
+  async function quickPack(format, paths) {
+    S.make.items = [];
+    await addItems(paths);
+    var dest = parentOf(paths[0]);
+    var name = paths.length === 1 ? stemOf(baseName(paths[0])) : (baseName(dest) || "Archive");
+    var opts = { format: format, level: "Normal", password: null, hide_names: false, repair: false };
+    var r;
+    try { r = await PZ.call("create", { sources: paths, out_dir: dest, name: name, options: opts }); }
+    catch (e) { return fail("Couldn't start", e); }
+    runJob(r.id, "create", {});
+  }
+  async function runLaunch(mode, paths) {
+    if (S.job) return toast("Wait for this one to finish first.");
+    if (mode === "add") { S.make.items = []; await addItems(paths); return show("make"); }
+    if (mode === "add-purr") return quickPack("Purr", paths);
+    if (mode === "add-zip") return quickPack("Zip", paths);
+    var list = paths.map(function (p) { return { mode: mode, path: p }; });
+    var first = list.shift(); S.launchQueue = list;
+    launchOne(first.mode, first.path);
+  }
+  // Picking several files sends one launch per file: gather them for a moment.
+  var launchBuf = null;
+  function handleLaunch(l) {
+    var mode = l.mode || "open", paths = l.paths || [];
+    if (!paths.length) return;
+    if (mode === "open") return handlePaths(paths);
+    if (launchBuf && launchBuf.mode === mode) { paths.forEach(function (p) { if (launchBuf.paths.indexOf(p) < 0) launchBuf.paths.push(p); }); return; }
+    var buf = { mode: mode, paths: paths.slice() };
+    launchBuf = buf;
+    setTimeout(function () { if (launchBuf === buf) launchBuf = null; runLaunch(buf.mode, buf.paths); }, 900);
+  }
+  window.pzLaunch = handleLaunch; // for tests
+  PZ.onLaunch(handleLaunch);
   PZ.onDrop(handlePaths);
   PZ.onOpenRequest(handlePaths);
 
@@ -688,7 +766,7 @@
     }
     try {
       var st = await PZ.call("startup");
-      if (st && st.paths && st.paths.length) handlePaths(st.paths);
+      if (st && st.paths && st.paths.length) handleLaunch({ mode: st.mode || "open", paths: st.paths });
     } catch (e) {}
   })();
 })();

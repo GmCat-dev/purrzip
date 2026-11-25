@@ -1,6 +1,6 @@
 [package]
 name = "purrzip-app"
-version = "0.2.3"
+version = "0.2.4"
 description = "Purrzip by GmCat: open and make archives"
 authors = ["GmCat"]
 license = "AGPL-3.0-or-later"
@@ -18,6 +18,7 @@ tauri-build = { version = "2.7.6", features = [] }
 [dependencies]
 purrzip-service = { path = "../../service" }
 serde_json = "1.0"
+serde = { version = "1", features = ["derive"] }
 tauri = { version = "2.12.7", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

@@ -9,8 +9,29 @@ use tauri::{Emitter, Manager};
 
 struct AppState {
     svc: Arc<Service>,
-    /// Files the system asked us to open at launch (Open with…, double-click).
-    startup: Mutex<Vec<String>>,
+    /// Files the system asked us to open at launch (Open with…, double-click, the right-click menu).
+    startup: Mutex<Launch>,
+}
+
+/// What a launch asks for: a mode from the right-click menu (or "open") and the files.
+#[derive(Default, Clone, serde::Serialize)]
+struct Launch {
+    mode: String,
+    paths: Vec<String>,
+}
+
+/// Right-click menu modes (Windows registry entries pass these): --extract-here, --extract-new, --extract-ask,
+/// --test, --add, --add-purr, --add-zip. Anything else opens the files as before.
+fn launch_from_args(args: &[String]) -> Launch {
+    const MODES: [&str; 7] = ["extract-here", "extract-new", "extract-ask", "test", "add", "add-purr", "add-zip"];
+    let mode = args
+        .iter()
+        .skip(1)
+        .filter_map(|a| a.strip_prefix("--"))
+        .find(|m| MODES.contains(m))
+        .unwrap_or("open")
+        .to_string();
+    Launch { mode, paths: paths_from_args(args) }
 }
 
 fn paths_from_args(args: &[String]) -> Vec<String> {
@@ -25,8 +46,8 @@ fn paths_from_args(args: &[String]) -> Vec<String> {
 #[tauri::command]
 async fn pz(state: tauri::State<'_, AppState>, cmd: String, args: Value) -> Result<Value, Fail> {
     if cmd == "startup" {
-        let paths: Vec<String> = std::mem::take(&mut *state.startup.lock().unwrap());
-        return Ok(json!({ "paths": paths }));
+        let l: Launch = std::mem::take(&mut *state.startup.lock().unwrap());
+        return Ok(json!({ "paths": l.paths, "mode": if l.mode.is_empty() { "open".to_string() } else { l.mode } }));
     }
     let svc = state.svc.clone();
     tauri::async_runtime::spawn_blocking(move || svc.call(&cmd, &args))
@@ -61,9 +82,9 @@ pub fn run() {
     {
         // A second launch (e.g. double-clicking another archive) hands its files to the open window.
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            let paths = paths_from_args(&argv);
-            if !paths.is_empty() {
-                let _ = app.emit("pz-open", paths);
+            let l = launch_from_args(&argv);
+            if !l.paths.is_empty() {
+                let _ = app.emit("pz-launch", l);
             }
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
@@ -80,7 +101,7 @@ pub fn run() {
             let platform = std::env::consts::OS;
             let svc = Arc::new(Service::new(cache, platform, roots, downloads));
             let args: Vec<String> = std::env::args().collect();
-            app.manage(AppState { svc, startup: Mutex::new(paths_from_args(&args)) });
+            app.manage(AppState { svc, startup: Mutex::new(launch_from_args(&args)) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![pz])
@@ -92,7 +113,7 @@ pub fn run() {
         if let tauri::RunEvent::Opened { urls } = _event {
             let paths: Vec<String> = urls.iter().filter_map(|u| u.to_file_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect();
             if let Some(st) = _app.try_state::<AppState>() {
-                st.startup.lock().unwrap().extend(paths.clone());
+                { let mut l = st.startup.lock().unwrap(); if l.mode.is_empty() { l.mode = "open".into(); } l.paths.extend(paths.clone()); }
             }
             let _ = _app.emit("pz-open", paths);
         }

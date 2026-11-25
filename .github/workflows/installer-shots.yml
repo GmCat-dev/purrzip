@@ -80,6 +80,56 @@ jobs:
           $shell.SendKeys("^+2")
           Start-Sleep -Seconds 3
           Shot "8-explorer"
+      - name: Right-click menu entries and actions
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("shots\$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
+            $g.Dispose(); $bmp.Dispose()
+          }
+          $exe = "$env:LOCALAPPDATA\Purrzip\purrzip-app.exe"
+          Write-Host "--- menu entries"
+          reg query "HKCU\Software\Classes\SystemFileAssociations\.zip\shell\Purrzip" /s
+          reg query "HKCU\Software\Classes\*\shell\Purrzip" /v AppliesTo
+          reg query "HKCU\Software\Classes\Directory\shell\Purrzip\shell" /s
+          $m = "C:\Menu test"
+          New-Item -ItemType Directory -Force -Path "$m\Trip" | Out-Null
+          Set-Content -Path "$m\Trip\notes.txt" -Value "hello from the menu test"
+          Set-Content -Path "$m\todo.txt" -Value "todo"
+          Compress-Archive -Path "$m\Trip" -DestinationPath "$m\Trip.zip"
+          function Run($argsList, $check, $name) {
+            Get-Process | Where-Object { $_.ProcessName -like "purrzip*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Process -FilePath $exe -ArgumentList $argsList
+            for ($i = 0; $i -lt 40; $i++) { Start-Sleep -Seconds 1; if (& $check) { break } }
+            Start-Sleep -Seconds 2
+            Shot $name
+            if (& $check) { Write-Host "ok   $name" } else { Write-Host "FAIL $name" }
+          }
+          Run @('--add-purr', "`"$m\Trip`"") { Test-Path "$m\Trip.purr" } "9-add-purr"
+          Run @('--extract-new', "`"$m\Trip.purr`"") { Test-Path "$m\Trip (2)\Trip\notes.txt" } "10-extract-new"
+          Run @('--add-zip', "`"$m\todo.txt`"") { Test-Path "$m\todo.zip" } "11-add-zip"
+          Run @('--test', "`"$m\Trip.purr`"") { $false } "12-test"
+          Get-Process | Where-Object { $_.ProcessName -like "purrzip*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -Recurse $m | Format-Table FullName, Length
+          # the menu itself: select Trip.zip in Explorer, open the classic right-click menu, then the Purrzip submenu
+          Start-Process explorer.exe -ArgumentList "/select,`"$m\Trip.zip`""
+          Start-Sleep -Seconds 6
+          $shell = New-Object -ComObject WScript.Shell
+          $null = $shell.AppActivate("Menu test")
+          Start-Sleep -Milliseconds 700
+          $shell.SendKeys("+{F10}")
+          Start-Sleep -Seconds 3
+          Shot "13-menu"
+          $shell.SendKeys("p")
+          Start-Sleep -Milliseconds 800
+          $shell.SendKeys("{RIGHT}")
+          Start-Sleep -Seconds 2
+          Shot "14-menu-purrzip"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
