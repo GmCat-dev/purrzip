@@ -3,8 +3,9 @@
 Purrzip's own archive format. This document is the reference: anyone can write a reader from it.
 The code lives in `core/src/purr/`.
 
-**Status:** version 1.0, in testing. It may still change until Purrzip's public launch; from then
-on every Purrzip will keep reading every .purr ever made.
+**Status:** version 1.0, stable since Purrzip's public launch (26 November 2026). Every Purrzip will
+keep reading every .purr ever made: existing fields never change meaning; new things are only added
+(new method numbers, new index sections from tag 64 up, new transform numbers).
 
 ## What it is for
 

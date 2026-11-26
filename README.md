@@ -19,6 +19,13 @@ your device: there is no server, Purrzip does everything on the device itself.
 
 Purrzip can open RAR files but can't make them: the RAR format belongs to its author.
 
+## Download
+
+**[purr.gmcat.io](https://purr.gmcat.io/)** or the [latest release](https://github.com/GmCat-dev/purrzip/releases/latest):
+Windows (`.exe` installer), Mac (`.dmg`, Apple chips and Intel), Linux (`.deb`, AppImage) and Android (`.apk`).
+Every download is built by GitHub Actions from this code. The installers aren't code-signed yet, so Windows and
+macOS show a warning the first time.
+
 ## Where to look
 
 | What | Where |
