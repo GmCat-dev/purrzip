@@ -15,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REF = json.load(open(os.path.join(HERE, "ref-grid.json")))
 PAL = {k: tuple(v) for k, v in REF["pal"].items()}
 PAL.update({"Y": (255, 200, 61), "y": (232, 165, 58), "Z": (56, 40, 72), "Q": (232, 234, 244),
-            "h": (240, 104, 138), "B": (120, 190, 236), "b": (200, 232, 250), "G": (255, 255, 255), "H": (150, 104, 72)})
+            "h": (240, 104, 138), "L": (196, 202, 220), "B": (120, 190, 236), "b": (200, 232, 250), "G": (255, 255, 255), "H": (150, 104, 72)})
 PAD = 4  # empty columns added on the left (room for a raised arm) and rows on top (sweat drops)
 
 
@@ -121,10 +121,10 @@ def look():
     return g
 
 
-def hearts():
+def hearts(g=None):
     """happy GmCat with two little hearts (from her 'hearts' emoji): closed happy eyes, pink cheeks, centred nose,
-    no mouth (the emoji's mouth read like a mustache), crisp pixel hearts"""
-    g = base()
+    no mouth (the emoji's mouth read like a mustache), crisp pixel hearts. Pass a grid to give it this face."""
+    g = base() if g is None else g
     # eyes: the reference eye cells (rows 8-9, cols 4 and 12 inside the head) become small closed "^" arcs
     for col in (4, 12):
         for r in (8, 9):
@@ -142,6 +142,36 @@ def hearts():
         for dc, ch in enumerate(line):
             if ch == "h":
                 P(g, 9 + dr, dc, "h")            # left heart, beside the cheek
+    return g
+
+
+def hearts_zip():
+    """website hero: the hearts GmCat holding the zipped folder instead of her mug"""
+    return hearts(zipcat())
+
+
+def padlock():
+    """website 'Real locks': GmCat holding a padlock (steel shackle, golden body, keyhole)"""
+    g = base()
+    clear_chest(g, rows=range(15, 26), cols=range(3, 14))  # her outline and chin shading stay
+    sprite(g, 14, 3, [
+        "...#####...",
+        "..#LLLLL#..",
+        "..#L###L#..",
+        "..#L#.#L#..",
+        "###########",
+        "#YYYYYYYYY#",
+        "#YYY###YYY#",
+        "#YYY###YYY#",
+        "#YYYY#YYYY#",
+        "#YYYY#YYYY#",
+        "#yyyyyyyyy#",
+        "###########",
+    ])
+    for c0 in (1, 13):  # paws holding the sides, like the zip folder
+        for (r, dc, ch) in [(19, 1, "#"), (19, 2, "#"), (20, 0, "#"), (20, 1, "W"), (20, 2, "W"), (20, 3, "#"),
+                            (21, 0, "#"), (21, 1, "W"), (21, 2, "s"), (21, 3, "#"), (22, 1, "#"), (22, 2, "#")]:
+            put(g, r, c0 + dc, ch)
     return g
 
 
@@ -185,7 +215,7 @@ def render(g, cell=24, crop=True):
 
 if __name__ == "__main__":
     out = {}
-    for name, fn in (("zip", zipcat), ("wave", wave), ("look", look), ("busy", busy), ("hearts", hearts)):
+    for name, fn in (("zip", zipcat), ("wave", wave), ("look", look), ("busy", busy), ("hearts", hearts), ("hearts-zip", hearts_zip), ("padlock", padlock)):
         g = fn()
         render(g).save(os.path.join(HERE, f"v2-{name}.png"))
         json.dump(["".join(r) for r in g], open(os.path.join(HERE, f"v2-{name}.json"), "w"), indent=0)

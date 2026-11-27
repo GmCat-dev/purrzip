@@ -66,6 +66,7 @@ fn main() {
             let mut password = None;
             let mut hide_names = false;
             let (mut repair, mut low_memory) = (false, false);
+            let mut split_size = None;
             let mut sources = Vec::new();
             let mut i = 4;
             while i < a.len() {
@@ -77,11 +78,18 @@ fn main() {
                     "--hide-names" => hide_names = true,
                     "--repair" => repair = true,
                     "--low-memory" => low_memory = true,
+                    "--split" => {
+                        split_size = Some(purrzip_core::split::parse_size(&a[i + 1]).unwrap_or_else(|| {
+                            eprintln!("--split needs a size like 450MB or 2GB");
+                            std::process::exit(1)
+                        }));
+                        i += 1;
+                    }
                     s => sources.push(PathBuf::from(s)),
                 }
                 i += 1;
             }
-            let opts = CreateOptions { format, level, password, hide_names, repair, low_memory };
+            let opts = CreateOptions { format, level, password, hide_names, repair, low_memory, split_size };
             match create(&sources, &out, &opts, &Print) {
                 Ok(r) => println!("{}", serde_json::to_string(&serde_json::json!({"ok": true, "report": r})).unwrap()),
                 Err(e) => fail(e),

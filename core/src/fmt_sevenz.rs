@@ -41,7 +41,7 @@ fn nt_to_unix(t: sevenz_rust2::NtTime) -> Option<i64> {
 }
 
 fn open(path: &Path, password: Option<&str>) -> Result<Archive> {
-    Archive::open_with_password(path, &pw(password)).map_err(|e| map_err(e, password.is_some()))
+    Archive::read(&mut crate::split::open(path)?, &pw(password)).map_err(|e| map_err(e, password.is_some()))
 }
 
 pub fn list(path: &Path, password: Option<&str>) -> Result<Vec<Entry>> {
@@ -71,7 +71,7 @@ pub fn extract(path: &Path, password: Option<&str>, wanted: &Wanted, sink: &mut 
     }
     let names: Vec<String> = archive.files.iter().map(|f| f.name.clone()).collect();
     let mut used = vec![false; names.len()];
-    let mut reader = ArchiveReader::from_archive(archive, std::fs::File::open(path)?, pw(password));
+    let mut reader = ArchiveReader::from_archive(archive, crate::split::open(path)?, pw(password));
     let threads = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1).min(2);
     reader.set_thread_count(threads);
 

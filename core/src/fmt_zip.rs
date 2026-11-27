@@ -1,6 +1,6 @@
 use crate::safe::Sink;
 use crate::{unix_from_parts, Entry, Error, Result, Wanted};
-use std::fs::File;
+use crate::split::Source;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 use zip::result::ZipError;
@@ -23,8 +23,8 @@ pub(crate) fn map_err(e: ZipError) -> Error {
     }
 }
 
-fn open(path: &Path) -> Result<ZipArchive<BufReader<File>>> {
-    ZipArchive::new(BufReader::new(File::open(path)?)).map_err(map_err)
+fn open(path: &Path) -> Result<ZipArchive<BufReader<Source>>> {
+    ZipArchive::new(BufReader::new(crate::split::open(path)?)).map_err(map_err)
 }
 
 fn to_unix(d: Option<zip::DateTime>) -> Option<i64> {
@@ -36,7 +36,7 @@ fn to_unix(d: Option<zip::DateTime>) -> Option<i64> {
 }
 
 pub fn has_end_record(path: &Path) -> bool {
-    let Ok(mut f) = File::open(path) else { return false };
+    let Ok(mut f) = crate::split::open(path) else { return false };
     let Ok(len) = f.seek(SeekFrom::End(0)) else { return false };
     let start = len.saturating_sub(66 * 1024 + 22);
     if f.seek(SeekFrom::Start(start)).is_err() {
@@ -46,7 +46,7 @@ pub fn has_end_record(path: &Path) -> bool {
     if f.read_to_end(&mut buf).is_err() {
         return false;
     }
-    buf.windows(4).any(|w| w == b"PK\x05\x06") && ZipArchive::new(BufReader::new(File::open(path).unwrap())).is_ok()
+    buf.windows(4).any(|w| w == b"PK\x05\x06") && crate::split::open(path).map(|s| ZipArchive::new(BufReader::new(s)).is_ok()).unwrap_or(false)
 }
 
 pub fn list(path: &Path) -> Result<Vec<Entry>> {

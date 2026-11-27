@@ -99,6 +99,15 @@ fn arg_opt(a: &Value, k: &str) -> Option<String> {
 
 /// "photos.tar.gz" -> "photos", "set.part1.rar" -> "set"
 pub fn archive_stem(path: &Path) -> String {
+    // A piece of a split set ("photos.7z.003") is named after the set.
+    let base;
+    let path = match core::split::piece_number(path) {
+        Some((b, _)) => {
+            base = b;
+            base.as_path()
+        }
+        None => path,
+    };
     let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "archive".into());
     let lower = name.to_lowercase();
     for ext in [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".tbz2", ".txz", ".zip", ".7z", ".purr", ".rar", ".tar", ".gz", ".bz2", ".xz", ".zst", ".iso", ".cab", ".jar", ".apk"] {
@@ -225,9 +234,14 @@ impl Service {
         let path = PathBuf::from(arg_str(a, "path")?);
         let pw = arg_opt(a, "password");
         let l: Listing = core::list(&path, pw.as_deref())?;
-        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let size = match &l.split {
+            Some(s) => s.bytes,
+            None => std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0),
+        };
         let mut v = serde_json::to_value(&l).unwrap();
-        v["name"] = json!(path.file_name().map(|s| s.to_string_lossy()));
+        // A split set is shown under its own name ("Videos.zip"), whichever piece was opened.
+        let shown = core::split::piece_number(&path).filter(|_| l.split.is_some()).map(|(b, _)| b).unwrap_or_else(|| path.clone());
+        v["name"] = json!(shown.file_name().map(|s| s.to_string_lossy()));
         v["stem"] = json!(archive_stem(&path));
         v["file_size"] = json!(size);
         v["label"] = json!(l.format.label());
@@ -333,10 +347,22 @@ impl Service {
         if name.is_empty() {
             name = "Archive".into();
         }
-        let out = unique_path(&out_dir, &name, ext);
+        let mut out = unique_path(&out_dir, &name, ext);
+        if opts.split_size.is_some() {
+            // Pieces are named out.001, out.002...: the name must be free for those too.
+            let mut n = 2;
+            while core::split::pieces_exist(&out) || std::fs::symlink_metadata(&out).is_ok() {
+                out = out_dir.join(format!("{} ({}){}", name, n, ext));
+                n += 1;
+            }
+        }
         let (id, job) = self.new_job("create");
         std::thread::spawn(move || {
-            let r = guarded(|| core::create(&sources, &out, &opts, &*job).map(|rep| json!({"path": out, "report": rep})).map_err(Fail::from));
+            let r = guarded(|| {
+                core::create(&sources, &out, &opts, &*job)
+                    .map(|rep| json!({"path": rep.pieces.first().cloned().unwrap_or_else(|| out.clone()), "report": rep}))
+                    .map_err(Fail::from)
+            });
             if r.is_err() {
                 let _ = std::fs::remove_file(format!("{}.part", out.display()));
             }

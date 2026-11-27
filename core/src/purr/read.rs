@@ -32,8 +32,8 @@ fn same(a: &[u8], b: &[u8]) -> bool {
 }
 
 pub fn open(path: &Path, password: Option<&str>) -> Result<Archive> {
-    let mut f = File::open(path)?;
-    let len = f.metadata()?.len();
+    let mut f = crate::split::open(path)?;
+    let len = f.len();
     let mut hb = [0u8; HEADER_LEN];
     if len < (HEADER_LEN + FOOTER_LEN) as u64 || f.read_exact(&mut hb).is_err() {
         return Err(damaged("the archive is cut short"));
@@ -230,7 +230,7 @@ impl Archive {
             .collect()
     }
 
-    fn pack_reader<'a>(&'a self, f: &'a mut File, p: &PackInfo) -> Result<Box<dyn Read + 'a>> {
+    fn pack_reader<'a>(&'a self, f: &'a mut crate::split::Source, p: &PackInfo) -> Result<Box<dyn Read + 'a>> {
         f.seek(SeekFrom::Start(p.offset))?;
         let stored = BufReader::with_capacity(128 * 1024, f.take(p.stored_len));
         let plain: Box<dyn Read + 'a> = match &self.key {
@@ -315,8 +315,8 @@ impl Archive {
         };
         std::thread::scope(|scope| -> Result<()> {
             let mut pool: Pool<PhotoJob, PhotoOut> = Pool::new(scope, if blobs.is_empty() { 1 } else { workers }, workers * 2, &restore);
-            let mut f = File::open(&self.path)?;
-            let mut fd = File::open(&self.path)?; // second handle for reading single pieces directly
+            let mut f = crate::split::open(&self.path)?;
+            let mut fd = crate::split::open(&self.path)?; // second handle for reading single pieces directly
             let (mut ri, mut bi) = (0usize, 0usize);
             let mut buf: Vec<u8> = Vec::new();
             while ri < refs.len() || bi < blob_refs.len() {

@@ -1,10 +1,10 @@
 # Builds Purrzip for Windows, macOS and Linux on GitHub's machines, after the engine tests pass.
-# Run by hand (Actions -> Build Purrzip -> Run workflow) or by pushing a tag like v0.1.0 (makes a draft release).
+# Run by hand (Actions -> Build Purrzip -> Run workflow). It makes no release: releases are made by hand from
+# these files with fixed names (Purrzip-Windows-setup.exe ...), because the site links to /releases/latest/download/<name>.
+# (A tag push used to start this too and added versioned duplicates to the release.)
 name: Build Purrzip
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
 
 permissions:
   contents: write
@@ -16,10 +16,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y zip unzip genisoimage
+      - run: sudo apt-get update && sudo apt-get install -y zip unzip genisoimage p7zip-full
       - run: cargo build --release -p purrzip-core --bins --examples
       - run: cargo test --release -p purrzip-core
       - run: python3 -I tests/core_test.py target/release/purrzip-cli target/release/examples/make_fixtures "$(ls -d ~/.cargo/registry/src/*/unrar-0.5.8/data)"
+      # Split archives must work both ways with real 7-Zip: Purrzip's pieces open in 7-Zip, 7-Zip's volumes open in Purrzip.
+      - name: Split archives vs 7-Zip
+        run: |
+          set -euo pipefail
+          W=$(mktemp -d); mkdir -p "$W/src/stuff"; head -c 3500000 /dev/urandom > "$W/src/stuff/random.bin"; cp -r core/src "$W/src/stuff/code"
+          CLI=target/release/purrzip-cli
+          for f in zip 7z; do
+            $CLI create $f normal "$W/pz.$f" --split 1MB "$W/src/stuff" > /dev/null
+            7z t "$W/pz.$f.001" > /dev/null
+            mkdir "$W/x-$f"; 7z x -o"$W/x-$f" "$W/pz.$f.001" > /dev/null; diff -r "$W/src/stuff" "$W/x-$f/stuff"
+            echo "7-Zip opened Purrzip's split .$f ($(ls $W/pz.$f.* | wc -l) pieces)"
+          done
+          (cd "$W/src" && 7z a -v1m "$W/sz.7z" stuff > /dev/null && 7z a -tzip -v1m "$W/sz.zip" stuff > /dev/null)
+          for f in 7z zip; do
+            mkdir "$W/y-$f"; $CLI extract "$W/sz.$f.001" "$W/y-$f" > /dev/null; diff -r "$W/src/stuff" "$W/y-$f/stuff"
+            echo "Purrzip opened 7-Zip's split .$f ($(ls $W/sz.$f.* | wc -l) volumes)"
+          done
 
   desktop:
     needs: test
@@ -54,9 +71,6 @@ jobs:
         with:
           projectPath: app
           args: ${{ matrix.args }}
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Purrzip {0}', github.ref_name) || '' }}
-          releaseDraft: true
       - uses: actions/upload-artifact@v4
         with:
           name: purrzip-${{ matrix.os }}

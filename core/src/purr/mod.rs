@@ -161,7 +161,7 @@ mod tests {
 
     fn make(t: &Tmp, root: &std::path::Path, name: &str, level: Level, password: Option<&str>, repair: bool) -> PathBuf {
         let out = t.p(name);
-        let opts = CreateOptions { format: CreateFormat::Purr, level, password: password.map(String::from), hide_names: false, repair, low_memory: false };
+        let opts = CreateOptions { format: CreateFormat::Purr, level, password: password.map(String::from), hide_names: false, repair, low_memory: false, split_size: None };
         let rep = create(&[root.to_path_buf()], &out, &opts, &Quiet::default()).unwrap();
         assert!(rep.purr.is_some());
         out

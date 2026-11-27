@@ -42,6 +42,9 @@ pub struct CreateOptions {
     /// .purr only: use less memory (phones).
     #[serde(default)]
     pub low_memory: bool,
+    /// Save as numbered pieces of at most this many bytes (name.7z.001, .002, ...). None = one file.
+    #[serde(default)]
+    pub split_size: Option<u64>,
 }
 
 #[derive(Debug, Default, Clone, serde::Serialize)]
@@ -51,6 +54,9 @@ pub struct CreateReport {
     pub bytes_in: u64,
     pub bytes_out: u64,
     pub skipped: Vec<(String, String)>,
+    /// Split archives: every piece made, in order (empty when it's one file).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pieces: Vec<PathBuf>,
     /// .purr only: what the repeat finder and the photo shrinker saved.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub purr: Option<crate::purr::Stats>,
@@ -158,6 +164,14 @@ pub fn create(sources: &[PathBuf], out: &Path, opts: &CreateOptions, progress: &
     if sources.is_empty() {
         return Err(Error::Other("Pick at least one file or folder.".into()));
     }
+    if let Some(s) = opts.split_size {
+        if s < crate::split::MIN_PIECE {
+            return Err(Error::Other("Pieces must be at least 1 MB.".into()));
+        }
+        if crate::split::pieces_exist(out) {
+            return Err(Error::Other("Pieces with that name are already in the folder; nothing was replaced.".into()));
+        }
+    }
     let mut report = CreateReport::default();
     let items = gather(sources, &mut report.skipped)?;
     let total: u64 = items.iter().map(|i| i.size).sum();
@@ -174,15 +188,32 @@ pub fn create(sources: &[PathBuf], out: &Path, opts: &CreateOptions, progress: &
         let _ = fs::remove_file(&part);
         return Err(if progress.cancelled() { Error::Cancelled } else { e });
     }
-    if out.exists() {
-        let _ = fs::remove_file(&part);
-        return Err(Error::Other("A file with that name appeared while packing; nothing was replaced.".into()));
+    let part_len = fs::metadata(&part)?.len();
+    let split = opts.split_size.filter(|&s| part_len > s);
+    if let Some(size) = split {
+        // Too big for one piece: cut it (the .part file is used up by the cutting).
+        report.pieces = match crate::split::cut(&part, out, size, progress) {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = fs::remove_file(&part);
+                return Err(if progress.cancelled() { Error::Cancelled } else { e });
+            }
+        };
+    } else {
+        if out.exists() {
+            let _ = fs::remove_file(&part);
+            return Err(Error::Other("A file with that name appeared while packing; nothing was replaced.".into()));
+        }
+        fs::rename(&part, out)?;
     }
-    fs::rename(&part, out)?;
     report.files = items.iter().filter(|i| !i.is_dir).count() as u64;
     report.folders = items.iter().filter(|i| i.is_dir).count() as u64;
     report.bytes_in = total;
-    report.bytes_out = fs::metadata(out).map(|m| m.len()).unwrap_or(0);
+    report.bytes_out = if report.pieces.is_empty() {
+        fs::metadata(out).map(|m| m.len()).unwrap_or(0)
+    } else {
+        report.pieces.iter().map(|p| fs::metadata(p).map(|m| m.len()).unwrap_or(0)).sum()
+    };
     progress.update(total, total, "");
     Ok(report)
 }

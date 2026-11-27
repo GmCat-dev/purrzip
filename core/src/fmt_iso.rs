@@ -3,7 +3,7 @@
 use crate::safe::Sink;
 use crate::{read_up_to, unix_from_parts, Entry, Error, Result, Wanted};
 use std::collections::HashSet;
-use std::fs::File;
+use crate::split::Source as File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
@@ -63,7 +63,7 @@ fn decode_name(raw: &[u8], joliet: bool) -> String {
 }
 
 fn walk(path: &Path) -> Result<(File, Vec<Rec>)> {
-    let mut f = File::open(path)?;
+    let mut f = crate::split::open(path)?;
     let (root, joliet) = root_of(&mut f)?;
     let mut out: Vec<Rec> = Vec::new();
     let mut seen = HashSet::new();

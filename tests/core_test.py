@@ -318,6 +318,51 @@ check("purr cut short: clear error, no crash", r.get("code") == "damaged", r)
 r = run("test", os.path.join(W, "p-max.purr"))
 check("purr: test command", r.get("ok") and r["files"] == len([k for k in PEXPECT if not k.endswith("/")]), r)
 
+# ---------- split archives (pieces of a chosen size: name.zip.001, .002, ...) ----------
+for fmt in ["zip", "7z", "purr"]:
+    base = os.path.join(W, f"split.{fmt}")
+    extra = ["--repair"] if fmt == "purr" else []
+    r = run("create", fmt, "store", base, "--split", "1MB", *extra, tree)
+    pieces = sorted(f for f in os.listdir(W) if f.startswith(f"split.{fmt}."))
+    check(f"split {fmt}: makes several pieces, none over 1 MB, no unsplit file left",
+          r.get("ok") and len(pieces) >= 3 and all(os.path.getsize(os.path.join(W, f)) <= 1_000_000 for f in pieces)
+          and not os.path.exists(base) and not os.path.exists(base + ".part") and len(r["report"]["pieces"]) == len(pieces), (r, pieces))
+    check(f"split {fmt}: pieces are numbered 001 upwards with no gaps", pieces == [f"split.{fmt}.{i:03d}" for i in range(1, len(pieces) + 1)], pieces)
+    for pick in [pieces[0], pieces[-1]]:
+        d = fresh(f"split-{fmt}-{pick[-3:]}")
+        r = run("extract", os.path.join(W, pick), d)
+        check(f"split {fmt}: opening piece {pick[-3:]} unpacks the whole set byte-exact", r.get("ok") and tree_hashes(d) == EXPECT, r)
+    joined = os.path.join(W, f"joined.{fmt}")
+    with open(joined, "wb") as j:
+        for f in pieces:
+            j.write(open(os.path.join(W, f), "rb").read())
+    d = fresh(f"split-{fmt}-joined")
+    check(f"split {fmt}: pieces joined end to end are one normal archive (7-Zip style)", run("extract", joined, d).get("ok") and tree_hashes(d) == EXPECT)
+    l = run("list", os.path.join(W, pieces[1]))
+    check(f"split {fmt}: listing reports the pieces", l.get("split", {}).get("pieces") == len(pieces) and l["split"]["first"] == pieces[0], l.get("split"))
+    if fmt == "purr":
+        check("split purr: repair data check works across pieces", run("verify", os.path.join(W, pieces[0])).get("report", {}).get("clean") is True)
+    last = os.path.join(W, pieces[-1]); os.rename(last, last + ".away")
+    r = run("list", os.path.join(W, pieces[0]))
+    check(f"split {fmt}: missing last piece explained in plain words", r.get("code") == "pieces_missing" and "missing" in r.get("message", ""), r)
+    os.rename(last + ".away", last)
+    mid = os.path.join(W, pieces[1]); os.rename(mid, mid + ".away")
+    r = run("list", os.path.join(W, pieces[0]))
+    check(f"split {fmt}: missing middle piece named", r.get("code") == "pieces_missing" and "Piece 2" in r.get("message", ""), r)
+    os.rename(mid + ".away", mid)
+# 7-Zip/HJSplit-style pieces made by a plain cut open too
+whole = open(os.path.join(W, "joined.7z"), "rb").read()
+for i in range(0, len(whole), 700_000):
+    open(os.path.join(W, f"cut7.7z.{i // 700_000 + 1:03d}"), "wb").write(whole[i:i + 700_000])
+d = fresh("split-cut7")
+check("split: plain-cut .7z.001 pieces (as 7-Zip makes) open byte-exact", run("extract", os.path.join(W, "cut7.7z.001"), d).get("ok") and tree_hashes(d) == EXPECT)
+r = run("create", "zip", "store", os.path.join(W, "fits.zip"), "--split", "500MB", tree)
+check("split: an archive that fits in one piece stays one ordinary file", r.get("ok") and os.path.exists(os.path.join(W, "fits.zip")) and "pieces" not in r["report"], r)
+r = run("create", "zip", "store", os.path.join(W, "split.zip"), "--split", "1MB", tree)
+check("split: refuses when pieces with that name are already there", r.get("ok") is False and "already" in r.get("message", ""), r)
+r = run("create", "zip", "store", os.path.join(W, "tiny.zip"), "--split", "1000", tree)
+check("split: pieces under 1 MB refused", r.get("ok") is False and "1 MB" in r.get("message", ""), r)
+
 print(f"\n{passed} passed, {len(failed)} failed")
 if failed:
     print("FAILED:", *failed, sep="\n  ")

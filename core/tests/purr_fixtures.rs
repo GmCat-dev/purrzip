@@ -87,7 +87,7 @@ fn archives_made_here_unpack_here() {
         for password in [None, Some("pw ☕")] {
             let t = Tmp::new();
             let out = t.0.join("a.purr");
-            let opts = CreateOptions { format: CreateFormat::Purr, level, password: password.map(String::from), hide_names: false, repair: true, low_memory: level == Level::Fast };
+            let opts = CreateOptions { format: CreateFormat::Purr, level, password: password.map(String::from), hide_names: false, repair: true, low_memory: level == Level::Fast, split_size: None };
             create(&[src.clone()], &out, &opts, &Quiet::default()).unwrap();
             let dest = t.0.join("out");
             fs::create_dir_all(&dest).unwrap();

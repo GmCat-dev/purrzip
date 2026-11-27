@@ -128,7 +128,7 @@ fn rs_err(e: reed_solomon_simd::Error) -> Error {
 }
 
 /// Read sector `i` of the body (zero-padded at the end of the body). Returns false if it can't be read in full.
-fn read_data_sector(f: &mut File, geo: &Geometry, i: u64, buf: &mut [u8]) -> bool {
+fn read_data_sector<R: Read + Seek>(f: &mut R, geo: &Geometry, i: u64, buf: &mut [u8]) -> bool {
     let start = i * geo.sector;
     let want = (geo.body_len - start).min(geo.sector) as usize;
     buf[want..].fill(0);
@@ -213,8 +213,8 @@ fn append_geo(path: &Path, geo: &Geometry, progress: &dyn Progress) -> Result<()
 }
 
 /// The quick check: is there an intact repair-data tail at the very end of the file?
-pub fn locate_tail(f: &mut File) -> Option<Geometry> {
-    let len = f.metadata().ok()?.len();
+pub fn locate_tail<R: Read + Seek>(f: &mut R) -> Option<Geometry> {
+    let len = f.seek(SeekFrom::End(0)).ok()?;
     let mut b = [0u8; REC_LEN as usize];
     if len >= REC_LEN && f.seek(SeekFrom::Start(len - REC_LEN)).is_ok() && f.read_exact(&mut b).is_ok() {
         if let Some(g) = Geometry::parse(&b, &TAIL_MAGIC) {
@@ -227,11 +227,11 @@ pub fn locate_tail(f: &mut File) -> Option<Geometry> {
 }
 
 /// Find the repair settings of a file, if it has repair data (searches when the end is damaged).
-pub fn locate(f: &mut File) -> Option<Geometry> {
+pub fn locate<R: Read + Seek>(f: &mut R) -> Option<Geometry> {
     if let Some(g) = locate_tail(f) {
         return Some(g);
     }
-    let len = f.metadata().ok()?.len();
+    let len = f.seek(SeekFrom::End(0)).ok()?;
     // Damaged or cut-off end: look for the head (or a tail that isn't at the end any more).
     // Repair data is about 3% of the file, so the head is normally in the last tenth; if that
     // fails, search everything.
@@ -242,7 +242,7 @@ pub fn locate(f: &mut File) -> Option<Geometry> {
     found
 }
 
-fn scan_for_marker(f: &mut File, len: u64, from: u64) -> Option<Geometry> {
+fn scan_for_marker<R: Read + Seek>(f: &mut R, len: u64, from: u64) -> Option<Geometry> {
     const WIN: usize = 1 << 20;
     let mut buf = vec![0u8; WIN + REC_LEN as usize];
     let mut pos = from;
@@ -278,13 +278,13 @@ fn scan_for_marker(f: &mut File, len: u64, from: u64) -> Option<Geometry> {
 }
 
 pub fn has_recovery(path: &Path) -> bool {
-    File::open(path).ok().and_then(|mut f| locate(&mut f)).is_some()
+    crate::split::open(path).ok().and_then(|mut f| locate(&mut f)).is_some()
 }
 
 /// Checksums from the two table copies; None where both copies of a block are damaged.
-fn load_table(f: &mut File, geo: &Geometry) -> Vec<Option<u32>> {
+fn load_table<R: Read + Seek>(f: &mut R, geo: &Geometry) -> Vec<Option<u32>> {
     let entries = geo.entries() as usize;
-    let read_copy = |f: &mut File, at: u64| -> Vec<u8> {
+    let read_copy = |f: &mut R, at: u64| -> Vec<u8> {
         let mut v = vec![0u8; geo.table_len() as usize];
         let mut got = 0;
         if f.seek(SeekFrom::Start(at)).is_ok() {
@@ -339,7 +339,7 @@ struct Scan {
     parity_ok: Vec<bool>,
 }
 
-fn scan(f: &mut File, progress: &dyn Progress) -> Result<Scan> {
+fn scan<R: Read + Seek>(f: &mut R, progress: &dyn Progress) -> Result<Scan> {
     let geo = locate(f).ok_or_else(|| Error::Other("This archive has no repair data.".into()))?;
     let table = load_table(f, &geo);
     let s = geo.sector as usize;
@@ -365,24 +365,24 @@ fn scan(f: &mut File, progress: &dyn Progress) -> Result<Scan> {
 
 /// Check an archive against its repair data without changing anything.
 pub fn verify(path: &Path, progress: &dyn Progress) -> Result<RepairReport> {
-    let mut f = File::open(path)?;
+    let mut f = crate::split::open(path)?;
     let sc = scan(&mut f, progress)?;
     let damaged = sc.data_ok.iter().filter(|ok| !**ok).count() as u64;
     let damaged_repair_data = sc.parity_ok.iter().filter(|ok| !**ok).count() as u64;
-    let whole = f.metadata()?.len() == sc.geo.total_len() && sc.table.iter().all(|t| t.is_some());
+    let whole = f.len() == sc.geo.total_len() && sc.table.iter().all(|t| t.is_some());
     Ok(RepairReport { damaged, damaged_repair_data, sector_bytes: sc.geo.sector, repaired: false, clean: damaged == 0 && damaged_repair_data == 0 && whole })
 }
 
 /// Rebuild the damaged parts of `src` into a new file `dst`. `src` is never changed.
 /// If there is more damage than the repair data covers, nothing is written and an error is returned.
 pub fn repair(src: &Path, dst: &Path, progress: &dyn Progress) -> Result<RepairReport> {
-    let mut f = File::open(src)?;
+    let mut f = crate::split::open(src)?;
     let sc = scan(&mut f, progress)?;
     let geo = sc.geo.clone();
     let damaged = sc.data_ok.iter().filter(|ok| !**ok).count() as u64;
     let damaged_repair_data = sc.parity_ok.iter().filter(|ok| !**ok).count() as u64;
     let mut report = RepairReport { damaged, damaged_repair_data, sector_bytes: geo.sector, repaired: false, clean: false };
-    let whole = f.metadata()?.len() == geo.total_len() && sc.table.iter().all(|t| t.is_some());
+    let whole = f.len() == geo.total_len() && sc.table.iter().all(|t| t.is_some());
     if damaged == 0 && damaged_repair_data == 0 && whole {
         report.clean = true;
         return Ok(report);

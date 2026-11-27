@@ -2,11 +2,10 @@
 
 use crate::safe::Sink;
 use crate::{read_up_to, Entry, Error, Format, Result, Wanted};
-use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
-fn decoder(fmt: Format, f: File) -> io::Result<Box<dyn Read>> {
+fn decoder<R: Read + 'static>(fmt: Format, f: R) -> io::Result<Box<dyn Read>> {
     let b = BufReader::with_capacity(256 * 1024, f);
     Ok(match fmt {
         Format::Gz | Format::TarGz => Box::new(flate2::read::MultiGzDecoder::new(b)),
@@ -36,7 +35,7 @@ pub fn looks_like_tar(h: &[u8]) -> bool {
     sum == want && h[0] != 0
 }
 
-pub fn inner_is_tar(fmt: Format, f: File) -> bool {
+pub fn inner_is_tar<R: Read + 'static>(fmt: Format, f: R) -> bool {
     let Ok(mut d) = decoder(fmt, f) else { return false };
     let mut buf = [0u8; 512];
     matches!(read_up_to(&mut d, &mut buf), Ok(512)) && looks_like_tar(&buf)
@@ -50,7 +49,7 @@ fn map_err(e: io::Error) -> Error {
 }
 
 pub fn list_tar(path: &Path, fmt: Format) -> Result<Vec<Entry>> {
-    let mut ar = tar::Archive::new(decoder(fmt, File::open(path)?)?);
+    let mut ar = tar::Archive::new(decoder(fmt, crate::split::open(path)?)?);
     let mut out = Vec::new();
     for e in ar.entries().map_err(map_err)? {
         let e = e.map_err(map_err)?;
@@ -76,7 +75,7 @@ pub fn list_tar(path: &Path, fmt: Format) -> Result<Vec<Entry>> {
 }
 
 pub fn extract_tar(path: &Path, fmt: Format, wanted: &Wanted, sink: &mut Sink) -> Result<()> {
-    let mut ar = tar::Archive::new(decoder(fmt, File::open(path)?)?);
+    let mut ar = tar::Archive::new(decoder(fmt, crate::split::open(path)?)?);
     let mut i = 0usize;
     for e in ar.entries().map_err(map_err)? {
         sink.check()?;
@@ -114,7 +113,8 @@ fn single_name(path: &Path, fmt: Format) -> String {
             return n;
         }
     }
-    let file = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let base = crate::split::piece_number(path).map(|(b, _)| b).unwrap_or_else(|| path.to_path_buf());
+    let file = base.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let lower = file.to_lowercase();
     for ext in [".gz", ".gzip", ".bz2", ".bzip2", ".xz", ".zst", ".zstd"] {
         if lower.ends_with(ext) && file.len() > ext.len() {
@@ -125,7 +125,7 @@ fn single_name(path: &Path, fmt: Format) -> String {
 }
 
 fn gz_stored_name(path: &Path) -> Option<String> {
-    let mut f = File::open(path).ok()?;
+    let mut f = crate::split::open(path).ok()?;
     let mut h = vec![0u8; 4096];
     let n = read_up_to(&mut f, &mut h).ok()?;
     h.truncate(n);
@@ -151,7 +151,7 @@ pub fn list_single(path: &Path, fmt: Format) -> Result<Vec<Entry>> {
     let mut size = 0u64;
     if fmt == Format::Gz {
         // Last 4 bytes hold the size modulo 4 GB: good enough as a hint.
-        let mut f = File::open(path)?;
+        let mut f = crate::split::open(path)?;
         if f.seek(SeekFrom::End(-4)).is_ok() {
             let mut b = [0u8; 4];
             if f.read_exact(&mut b).is_ok() {
@@ -164,7 +164,7 @@ pub fn list_single(path: &Path, fmt: Format) -> Result<Vec<Entry>> {
         index: 0,
         path: single_name(path, fmt),
         size,
-        packed: std::fs::metadata(path).ok().map(|m| m.len()),
+        packed: crate::split::open(path).ok().map(|s| s.len()),
         is_dir: false,
         encrypted: false,
         modified,
@@ -173,6 +173,6 @@ pub fn list_single(path: &Path, fmt: Format) -> Result<Vec<Entry>> {
 }
 
 pub fn extract_single(path: &Path, fmt: Format, entry: &Entry, sink: &mut Sink) -> Result<()> {
-    let mut d = decoder(fmt, File::open(path)?)?;
+    let mut d = decoder(fmt, crate::split::open(path)?)?;
     sink.file(0, &entry.path, &mut d, entry.modified)
 }

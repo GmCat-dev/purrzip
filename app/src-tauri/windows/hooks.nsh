@@ -3,14 +3,14 @@
 ; 1. .purr files get their own icon: the installer registers the file type as "Purrzip archive" (the name in
 ;    tauri.conf.json) with the app's icon; this points it at purr.ico instead.
 ; 2. A "Purrzip" right-click menu in File Explorer:
-;      archives:            Open with Purrzip, Extract here, Extract to a new folder, Extract files..., Test archive,
+;      archives (and .001, the first piece of a split archive): Open with Purrzip, Extract here, Extract to a new folder, Extract files..., Test archive,
 ;                           Add to archive..., Add to a .purr archive, Add to a .zip archive
 ;      other files/folders: Add to archive..., Add to a .purr archive, Add to a .zip archive
 ;    Each entry starts Purrzip with a mode (--extract-here, ...) and the file; picking several files starts it once
 ;    per file and the open window gathers them. On Windows 11 these sit under "Show more options".
 
 !define PZ_CLASSES "Software\Classes"
-!define PZ_NOT_ARCHIVES "NOT (System.FileExtension:=.zip OR System.FileExtension:=.7z OR System.FileExtension:=.purr OR System.FileExtension:=.rar OR System.FileExtension:=.tar OR System.FileExtension:=.tgz OR System.FileExtension:=.gz OR System.FileExtension:=.bz2 OR System.FileExtension:=.xz OR System.FileExtension:=.zst OR System.FileExtension:=.tbz2 OR System.FileExtension:=.txz OR System.FileExtension:=.iso OR System.FileExtension:=.cab)"
+!define PZ_NOT_ARCHIVES "NOT (System.FileExtension:=.zip OR System.FileExtension:=.7z OR System.FileExtension:=.purr OR System.FileExtension:=.rar OR System.FileExtension:=.tar OR System.FileExtension:=.tgz OR System.FileExtension:=.gz OR System.FileExtension:=.bz2 OR System.FileExtension:=.xz OR System.FileExtension:=.zst OR System.FileExtension:=.tbz2 OR System.FileExtension:=.txz OR System.FileExtension:=.iso OR System.FileExtension:=.cab OR System.FileExtension:=.001)"
 
 ; one menu entry: KEY = parent "shell" key, NAME = sort key, TEXT, ARGS, FLAGS (0x20 = line above)
 !macro PZ_ITEM KEY NAME TEXT ARGS FLAGS
@@ -62,6 +62,7 @@
   !insertmacro PZ_ARCHIVE_MENU txz
   !insertmacro PZ_ARCHIVE_MENU iso
   !insertmacro PZ_ARCHIVE_MENU cab
+  !insertmacro PZ_ARCHIVE_MENU 001
 
   ; every other file (archives have their own menu above) and every folder
   !insertmacro PZ_MENU "${PZ_CLASSES}\*\shell\Purrzip"
@@ -90,5 +91,6 @@
   !insertmacro PZ_UNMENU txz
   !insertmacro PZ_UNMENU iso
   !insertmacro PZ_UNMENU cab
+  !insertmacro PZ_UNMENU 001
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 !macroend

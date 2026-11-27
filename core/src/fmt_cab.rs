@@ -2,12 +2,12 @@
 
 use crate::safe::Sink;
 use crate::{unix_from_parts, Entry, Error, Result, Wanted};
-use std::fs::File;
+use crate::split::Source as File;
 use std::io::BufReader;
 use std::path::Path;
 
 fn open(path: &Path) -> Result<cab::Cabinet<BufReader<File>>> {
-    cab::Cabinet::new(BufReader::new(File::open(path)?)).map_err(|e| Error::Damaged(e.to_string()))
+    cab::Cabinet::new(BufReader::new(crate::split::open(path)?)).map_err(|e| Error::Damaged(e.to_string()))
 }
 
 fn names(c: &cab::Cabinet<BufReader<File>>) -> Vec<(String, u64, Option<i64>)> {

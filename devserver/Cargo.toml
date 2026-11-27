@@ -1,9 +1,9 @@
 [package]
 name = "purrzip-devserver"
-version = "0.2.6"
+version = "0.2.7"
 edition = "2024"
 
 [dependencies]
-purrzip-service = { version = "0.2.6", path = "../service" }
+purrzip-service = { version = "0.2.7", path = "../service" }
 serde_json = "1.0.154"
 tiny_http = "0.12.0"

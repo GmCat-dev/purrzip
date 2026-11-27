@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Purrzip",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "identifier": "io.gmcat.purrzip",
   "build": {
     "frontendDist": "../ui"
@@ -118,6 +118,13 @@
           "cab"
         ],
         "name": "Disc image / cabinet",
+        "role": "Viewer"
+      },
+      {
+        "ext": [
+          "001"
+        ],
+        "name": "Split archive (first piece)",
         "role": "Viewer"
       }
     ],

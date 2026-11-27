@@ -107,6 +107,18 @@
         <label class="check"><input type="checkbox" id="m-repair"> <span>Add repair data (+3% size)</span></label>
         <small class="hint">If the archive gets damaged one day, Purrzip can use this to fix it.</small>
       </div>
+      <label class="check"><input type="checkbox" id="m-split-on"> <span>Split into pieces</span></label>
+      <div id="m-split-box" hidden>
+        <div class="seg sizes" role="radiogroup" aria-label="Biggest size of one piece" id="m-split">
+          <button type="button" role="radio" data-v="100000000" aria-checked="false"><b>100 MB</b><small>Email, chat</small></button>
+          <button type="button" role="radio" data-v="450000000" aria-checked="true"><b>450 MB</b><small>Sites with a 500 MB limit</small></button>
+          <button type="button" role="radio" data-v="1000000000" aria-checked="false"><b>1 GB</b><small>Cloud uploads</small></button>
+          <button type="button" role="radio" data-v="4000000000" aria-checked="false"><b>4 GB</b><small>Older USB sticks</small></button>
+          <button type="button" role="radio" data-v="custom" aria-checked="false"><b>My size</b><small>Type it in</small></button>
+        </div>
+        <label class="field" id="m-split-custom-row" hidden><span>Biggest piece</span><input id="m-split-custom" type="text" inputmode="decimal" placeholder="For example 250 MB or 2 GB" autocomplete="off"></label>
+        <small class="hint" id="m-split-hint"></small>
+      </div>
     </div>
     <div class="dest-row">
       <span class="muted">Save in</span> <b id="m-dest">…</b>

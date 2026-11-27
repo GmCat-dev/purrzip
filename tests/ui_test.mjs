@@ -4,6 +4,7 @@
 import { createRequire } from "module";
 import { execFileSync } from "child_process";
 import fs from "fs";
+import crypto from "crypto";
 import path from "path";
 const require = createRequire(import.meta.url);
 const puppeteer = require("puppeteer");
@@ -172,8 +173,9 @@ for (const [label, w, h, theme] of [["phone/day", 390, 844, "light"], ["desktop/
   // 8. stop a big job
   await p.click("#d-again"); await p.click("#go-home");
   await openFromPicker(p, "big.zip"); await waitView(p, "open");
-  await p.click("#o-all"); await waitView(p, "work"); await wait(300);
-  await p.click("#w-stop");
+  // Press Stop the moment unpacking starts: a warm disk unpacks the 300 MB test file in under half a second.
+  await p.click("#o-all"); await waitView(p, "work");
+  await p.$eval("#w-stop", b => b.click());
   ok(`${label}: stopping returns to the archive`, await waitView(p, "open"));
   const left = fs.readdirSync(DL).filter(n => n.startsWith("big") && n !== "big.zip" || n.startsWith(".purrzip"));
   ok(`${label}: nothing half-done left behind`, left.length === 0, left);
@@ -240,6 +242,51 @@ for (const [label, w, h, theme] of [["phone/day", 390, 844, "light"], ["desktop/
   await p.type("#dlg-pw", "hush"); await p.keyboard.press("Enter");
   ok(`${label}: right password opens the purr`, await waitView(p, "open") && (await p.$$eval("#o-list .row", r => r.length)) === 1);
   fs.rmSync(lockedPath);
+
+  // 8b. split into pieces of a chosen size, opened back as one
+  const vids = path.join(ROOT, "Videos"), clip = path.join(vids, "clip.bin");
+  fs.mkdirSync(vids, { recursive: true });
+  if (!fs.existsSync(clip)) fs.writeFileSync(clip, crypto.randomBytes(3_500_000));
+  await p.click("#go-home"); await p.click("#home-make"); await wait(200);
+  await p.click("#m-add-files"); await wait(400);
+  await p.click("#pick-up"); await wait(300);
+  await checkRow(p, "#pick-list", "Videos"); await p.click("#pick-ok"); await wait(400);
+  ok(`${label}: split options hidden until asked`, !(await visible(p, "#m-split-box")));
+  await p.click('#m-format button[data-v="Zip"]');
+  await p.click("#m-split-on");
+  ok(`${label}: split shows sizes, 450 MB picked, hint names the pieces`, (await visible(p, "#m-split-box")) && (await p.$eval('#m-split button[data-v="450000000"]', b => b.getAttribute("aria-checked"))) === "true" && (await text(p, "#m-split-hint")).includes("Videos.zip.001"), await text(p, "#m-split-hint"));
+  await p.click('#m-split button[data-v="custom"]');
+  ok(`${label}: own size: field shown, Make waits for a size`, (await visible(p, "#m-split-custom-row")) && await p.$eval("#m-go", b => b.disabled));
+  await p.type("#m-split-custom", "0.5 MB");
+  ok(`${label}: pieces under 1 MB refused`, await p.$eval("#m-go", b => b.disabled) && (await text(p, "#m-split-hint")).includes("at least 1 MB"));
+  await p.$eval("#m-split-custom", e => { e.value = ""; }); await p.type("#m-split-custom", "1 MB");
+  ok(`${label}: 1 MB accepted`, !(await p.$eval("#m-go", b => b.disabled)) && (await text(p, "#m-split-hint")).includes("1 MB at most"));
+  await p.click('#m-format button[data-v="SevenZ"]');
+  ok(`${label}: hint follows the kind (7z)`, (await text(p, "#m-split-hint")).includes("Videos.7z.001") && (await text(p, "#m-split-hint")).includes("7-Zip"));
+  await p.click('#m-format button[data-v="Zip"]');
+  ok(`${label}: hint follows the kind back to zip`, (await text(p, "#m-split-hint")).includes("Videos.zip.001"));
+  await p.click("#m-go");
+  ok(`${label}: split zip made`, await waitView(p, "done", 30000));
+  const firstPiece = path.join(ROOT, (await text(p, "#d-path")).split(" › ").slice(1).join("/"));
+  const pieces = fs.readdirSync(path.dirname(firstPiece)).filter(f => f.startsWith("Videos.zip.")).sort();
+  ok(`${label}: 4 pieces named .001 to .004`, JSON.stringify(pieces) === '["Videos.zip.001","Videos.zip.002","Videos.zip.003","Videos.zip.004"]' && firstPiece.endsWith("Videos.zip.001"), pieces);
+  ok(`${label}: done screen lists the pieces`, (await text(p, "#d-notes")).includes("4 pieces") && (await text(p, "#d-notes")).includes("Videos.zip.004"));
+  ok(`${label}: no piece over 1 MB`, pieces.every(f => fs.statSync(path.join(path.dirname(firstPiece), f)).size <= 1_000_000));
+  await p.click("#d-again"); await p.click("#go-home");
+  await p.evaluate(f => window.pzOpenPaths([f]), path.join(path.dirname(firstPiece), "Videos.zip.003"));
+  ok(`${label}: opening any piece opens the set`, await waitView(p, "open") && (await text(p, "#o-summary")).includes("4 pieces"));
+  await p.click("#o-all");
+  ok(`${label}: split zip unzips`, await waitView(p, "done", 30000));
+  const unz = path.join(DL, (await text(p, "#d-path")).split(" › ").slice(2).join("/"));
+  const back = fs.existsSync(path.join(unz, "clip.bin")) ? path.join(unz, "clip.bin") : unz;
+  ok(`${label}: split zip comes back byte-exact`, fs.existsSync(back) && Buffer.compare(fs.readFileSync(back), fs.readFileSync(clip)) === 0, back);
+  fs.rmSync(unz, { recursive: true, force: true });
+  pieces.slice(0, 2).forEach(f => fs.renameSync(path.join(path.dirname(firstPiece), f), path.join(ROOT, "..", f)));
+  await p.click("#d-again"); await p.click("#go-home");
+  await p.evaluate(f => window.pzOpenPaths([f]), path.join(path.dirname(firstPiece), "Videos.zip.003"));
+  ok(`${label}: missing first piece explained`, await waitView(p, "error") && (await text(p, "#e-text")).includes("first piece"), await text(p, "#e-text"));
+  await p.click("#e-back");
+  pieces.forEach(f => { fs.rmSync(path.join(path.dirname(firstPiece), f), { force: true }); fs.rmSync(path.join(ROOT, "..", f), { force: true }); });
 
   // 9. not an archive
   await p.click("#go-home");

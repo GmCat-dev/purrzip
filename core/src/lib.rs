@@ -3,7 +3,6 @@
 //! Copyright (C) 2026 GmCat. Licensed under the GNU AGPL v3 or later, with an
 //! additional permission to combine with the UnRAR library (see LICENSE).
 
-use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,6 +16,7 @@ mod fmt_stream;
 mod fmt_zip;
 pub mod purr;
 pub mod safe;
+pub mod split;
 
 pub use create::{create, CreateFormat, CreateOptions, Level};
 
@@ -85,6 +85,9 @@ pub struct Listing {
     pub any_encrypted: bool,
     /// True when sizes are estimates (single gz/bz2/xz/zst streams).
     pub size_unknown: bool,
+    /// Set when the archive is saved as numbered pieces (name.7z.001, .002, ...).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub split: Option<split::SplitInfo>,
     /// Extra facts for .purr archives.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub purr: Option<purr::PurrInfo>,
@@ -117,6 +120,9 @@ pub enum Error {
     Damaged(String),
     #[error("Stopped.")]
     Cancelled,
+    /// A split archive with a piece missing (the message says which, in plain words).
+    #[error("{0}")]
+    PiecesMissing(String),
     #[error("{0}")]
     Io(#[from] io::Error),
     #[error("{0}")]
@@ -133,6 +139,7 @@ impl Error {
             Error::Unsupported(_) => "unsupported",
             Error::Damaged(_) => "damaged",
             Error::Cancelled => "cancelled",
+            Error::PiecesMissing(_) => "pieces_missing",
             Error::Io(e) if e.kind() == io::ErrorKind::StorageFull => "disk_full",
             Error::Io(_) => "io",
             Error::Other(_) => "other",
@@ -161,7 +168,9 @@ impl Progress for Quiet {
 
 /// Look at the first bytes of a file and say what it is.
 pub fn detect(path: &Path) -> Result<Format> {
-    let mut f = File::open(path)?;
+    // A piece of a split set: check the set is complete, then look at the joined whole.
+    split::pieces(path)?;
+    let mut f = split::open(path)?;
     let mut head = vec![0u8; 0x8006];
     let n = read_up_to(&mut f, &mut head)?;
     head.truncate(n);
@@ -217,7 +226,7 @@ pub fn detect(path: &Path) -> Result<Format> {
         return Ok(Format::Zip);
     }
     // A .purr whose first bytes are damaged still ends with its repair data, or at least has its name.
-    if purr::recovery::locate_tail(&mut f).is_some() || path.extension().map(|e| e.eq_ignore_ascii_case("purr")).unwrap_or(false) {
+    if purr::recovery::locate_tail(&mut f).is_some() || split::piece_number(path).map(|(b, _)| b).unwrap_or_else(|| path.to_path_buf()).extension().map(|e| e.eq_ignore_ascii_case("purr")).unwrap_or(false) {
         return Ok(Format::Purr);
     }
     Err(Error::Unknown)
@@ -225,11 +234,23 @@ pub fn detect(path: &Path) -> Result<Format> {
 
 /// List what is inside.
 pub fn list(path: &Path, password: Option<&str>) -> Result<Listing> {
+    list_inner(path, password).map_err(|e| match (e, split::info(path)) {
+        // A split archive that looks damaged is most often missing its last piece(s).
+        (Error::Damaged(_), Some(si)) => Error::PiecesMissing(format!(
+            "Purrzip found {} pieces of this split archive, but it isn't complete: the last piece or pieces are probably missing. Put all the pieces in the same folder and try again.",
+            si.pieces
+        )),
+        (e, _) => e,
+    })
+}
+
+fn list_inner(path: &Path, password: Option<&str>) -> Result<Listing> {
     let format = detect(path)?;
     let mut purr_info = None;
     let (entries, size_unknown) = match format {
         Format::Zip => (fmt_zip::list(path)?, false),
         Format::SevenZ => (fmt_sevenz::list(path, password)?, false),
+        Format::Rar if split::is_split(path) => return Err(rar_pieces()),
         Format::Rar => (fmt_rar::list(path, password)?, false),
         Format::Iso => (fmt_iso::list(path)?, false),
         Format::Cab => (fmt_cab::list(path)?, false),
@@ -243,7 +264,7 @@ pub fn list(path: &Path, password: Option<&str>) -> Result<Listing> {
     };
     let total_size = entries.iter().map(|e| e.size).sum();
     let any_encrypted = entries.iter().any(|e| e.encrypted);
-    Ok(Listing { format, entries, total_size, any_encrypted, size_unknown, purr: purr_info })
+    Ok(Listing { format, entries, total_size, any_encrypted, size_unknown, split: split::info(path), purr: purr_info })
 }
 
 /// Extract everything (or only `only`, a list of entry indexes) into `dest`.
@@ -280,6 +301,7 @@ pub fn extract_listed(
     match format {
         Format::Zip => fmt_zip::extract(path, password, &wanted, &mut sink)?,
         Format::SevenZ => fmt_sevenz::extract(path, password, &wanted, &mut sink)?,
+        Format::Rar if split::is_split(path) => return Err(rar_pieces()),
         Format::Rar => fmt_rar::extract(path, password, &wanted, &mut sink)?,
         Format::Iso => fmt_iso::extract(path, &wanted, &mut sink)?,
         Format::Cab => fmt_cab::extract(path, &wanted, &mut sink)?,
@@ -292,6 +314,11 @@ pub fn extract_listed(
         _ => fmt_stream::extract_tar(path, format, &wanted, &mut sink)?,
     }
     Ok(sink.finish())
+}
+
+/// RAR cut into plain .001 pieces (rare: WinRAR itself names its pieces name.part1.rar, which opens fine).
+fn rar_pieces() -> Error {
+    Error::Unsupported("a RAR cut into .001/.002 pieces. Join them into one .rar first, or ask for WinRAR's own name.part1.rar pieces".into())
 }
 
 /// Check every file decodes correctly. Writes into a temporary folder that is removed after.

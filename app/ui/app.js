@@ -18,6 +18,8 @@
     do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
     return (n >= 100 ? Math.round(n) : n.toFixed(1)) + " " + u[i];
   }
+  // Sizes people type for upload limits are decimal (450 MB = 450,000,000 bytes): show piece sizes the same way.
+  function dsize(n) { return n >= 1e9 ? +(n / 1e9).toFixed(2) + " GB" : n >= 1e6 ? +(n / 1e6).toFixed(1) + " MB" : Math.round(n / 1e3) + " KB"; }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : (many || one + "s")); }
   function baseName(p) { return String(p).split(/[\\/]/).filter(Boolean).pop() || String(p); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -185,7 +187,21 @@
     else if (P.mode === "view") ok.textContent = "Close";
     ok.disabled = false;
   }
-  function looksArchive(n) { return /\.(zip|7z|purr|rar|tar|tgz|gz|bz2|xz|zst|iso|cab|tbz2|txz|jar|apk)$/i.test(n); }
+  function looksArchive(n) { return /\.(zip|7z|purr|rar|tar|tgz|gz|bz2|xz|zst|iso|cab|tbz2|txz|jar|apk|\d{3,4})$/i.test(n); }
+  // Split archives: "450 MB", "1.5 GB", "700m" -> bytes (MB = 1,000,000 like upload limits). null if unclear.
+  function parseSize(t) {
+    var m = String(t || "").trim().toLowerCase().replace(/[, _]/g, "").match(/^(\d+(?:\.\d+)?)(b|k|kb|kib|m|mb|mib|g|gb|gib)?$/);
+    if (!m) return null;
+    var mult = { b: 1, k: 1e3, kb: 1e3, kib: 1024, m: 1e6, mb: 1e6, mib: 1048576, g: 1e9, gb: 1e9, gib: 1073741824 }[m[2] || "mb"];
+    var v = Math.floor(parseFloat(m[1]) * mult);
+    return v > 0 ? v : null;
+  }
+  function splitSize() {
+    if (!$("m-split-on").checked) return null;
+    var b = $("m-split").querySelector("[aria-checked=true]");
+    var v = b ? b.dataset.v : "450000000";
+    return v === "custom" ? parseSize($("m-split-custom").value) : Number(v);
+  }
   function closePicker(v) { $("pick").hidden = true; var p = P; P = null; if (p) p.resolve(v); }
   $("pick-close").onclick = function () { closePicker(null); };
   $("pick-ok").onclick = function () {
@@ -220,7 +236,7 @@
     $("o-name").textContent = listing.name;
     $("o-format").textContent = listing.label;
     var files = listing.entries.filter(function (e) { return !e.is_dir && !e.special; }).length;
-    $("o-summary").textContent = plural(files, "file") + (listing.size_unknown ? "" : " · " + size(listing.total_size) + " unpacked") + " · " + size(listing.file_size) + " packed" + (listing.any_encrypted || password ? " · 🔒" : "") + (listing.purr && listing.purr.repair_data ? " · repair data ✓" : "");
+    $("o-summary").textContent = plural(files, "file") + (listing.size_unknown ? "" : " · " + size(listing.total_size) + " unpacked") + " · " + size(listing.file_size) + " packed" + (listing.any_encrypted || password ? " · 🔒" : "") + (listing.purr && listing.purr.repair_data ? " · repair data ✓" : "") + (listing.split ? " · " + plural(listing.split.pieces, "piece") : "");
     $("o-search").value = "";
     $("o-dest").textContent = S.open.dest ? nicePath(S.open.dest) : "(pick a folder)";
     renderOpen();
@@ -411,7 +427,20 @@
       ? "Fast finds repeats but leaves photos as they are. Normal and Smallest also shrink photos; Smallest takes the longest."
       : "Photos, videos and other zips are already squeezed, so they're stored as they are.";
     $("m-repair-row").hidden = S.make.format !== "Purr";
-    $("m-go").disabled = !S.make.items.length || (pwOn && (!a || a !== b));
+    var splitOn = $("m-split-on").checked, ss = splitSize(), ext = { Zip: ".zip", SevenZ: ".7z", Purr: ".purr" }[S.make.format];
+    var pick = $("m-split").querySelector("[aria-checked=true]"), custom = splitOn && !!pick && pick.dataset.v === "custom";
+    $("m-split-custom-row").hidden = !custom;
+    var splitBad = splitOn && (!ss || ss < 1000000);
+    if (splitOn) {
+      var nm = ($("m-name").value || "Archive").trim() + ext;
+      var total = S.make.items.reduce(function (t, x) { return t + (x.size || 0); }, 0);
+      $("m-split-hint").textContent = splitBad
+        ? (custom && !$("m-split-custom").value ? "Type the biggest size one piece may be, like 250 MB." : "Pieces must be at least 1 MB. Try something like 250 MB or 2 GB.")
+        : "Makes " + nm + ".001, " + nm + ".002 and so on, each " + dsize(ss) + " at most. Keep all the pieces together and open the .001 to unpack. "
+          + (S.make.format === "Purr" ? "Only Purrzip opens .purr pieces." : "7-Zip and WinRAR open them too.")
+          + (total && !S.make.items.some(function (x) { return x.is_dir; }) && total <= ss ? " These files fit in one piece, so it will be one ordinary file." : "");
+    }
+    $("m-go").disabled = !S.make.items.length || (pwOn && (!a || a !== b)) || splitBad;
   }
   async function addItems(paths) {
     for (var i = 0; i < paths.length; i++) {
@@ -453,7 +482,10 @@
       };
     });
   }
-  segment("m-format", "format"); segment("m-level", "level");
+  segment("m-format", "format"); segment("m-level", "level"); segment("m-split", "splitPick");
+  $("m-split-on").onchange = function () { $("m-split-box").hidden = !this.checked; validateMake(); };
+  $("m-split-custom").oninput = validateMake;
+  $("m-name").addEventListener("input", validateMake);
   $("m-pw-on").onchange = function () { $("m-pw-box").hidden = !this.checked; validateMake(); if (this.checked) $("m-pw").focus(); };
   $("m-pw").oninput = validateMake; $("m-pw2").oninput = validateMake;
   $("m-dest-change").onclick = async function () {
@@ -465,7 +497,7 @@
     var M = S.make;
     if (!M.dest) { var d = await chooseFolder(null, "Save the archive in which folder?"); if (!d) return; M.dest = d; renderMake(); }
     var pw = $("m-pw-on").checked ? $("m-pw").value : null;
-    var opts = { format: M.format, level: M.level, password: pw, hide_names: M.format === "SevenZ" && !!pw && $("m-hide").checked, repair: M.format === "Purr" && $("m-repair").checked };
+    var opts = { format: M.format, level: M.level, password: pw, hide_names: M.format === "SevenZ" && !!pw && $("m-hide").checked, repair: M.format === "Purr" && $("m-repair").checked, split_size: splitSize() };
     var r;
     try { r = await PZ.call("create", { sources: M.items.map(function (i) { return i.path; }), out_dir: M.dest, name: $("m-name").value, options: opts }); }
     catch (e) { return fail("Couldn't start", e); }
@@ -574,6 +606,15 @@
       var saved = r.bytes_in ? Math.round((1 - r.bytes_out / r.bytes_in) * 100) : 0;
       $("d-text").textContent = plural(r.files, "file") + " · " + size(r.bytes_in) + " → " + size(r.bytes_out) + (saved > 0 ? " (" + saved + "% smaller)" : "");
       $("d-path").textContent = nicePath(res.path);
+      if (r.pieces && r.pieces.length) {
+        notes.hidden = false;
+        notes.appendChild(el("b", null, "Saved as " + plural(r.pieces.length, "piece") + ":"));
+        var ulx = el("ul");
+        r.pieces.slice(0, 8).forEach(function (p) { ulx.appendChild(el("li", null, baseName(String(p)))); });
+        if (r.pieces.length > 8) ulx.appendChild(el("li", null, "… up to " + baseName(String(r.pieces[r.pieces.length - 1]))));
+        notes.appendChild(ulx);
+        notes.appendChild(el("small", "hint", "Send or keep all of them together. To unpack, open the .001 with the other pieces in the same folder."));
+      }
       if (r.skipped && r.skipped.length) {
         notes.hidden = false;
         notes.appendChild(el("b", null, plural(r.skipped.length, "item") + " left out:"));
@@ -590,6 +631,7 @@
       }
       S.make.items = []; $("m-name").value = "Archive"; $("m-name").dataset.touched = "";
       $("m-repair").checked = false;
+      $("m-split-on").checked = false; $("m-split-box").hidden = true;
       $("m-pw-on").checked = false; $("m-pw-box").hidden = true; $("m-pw").value = ""; $("m-pw2").value = "";
     }
     $("d-show").textContent = job.kind === "repair" || job.kind === "test" ? "Open it" : "Show it";
